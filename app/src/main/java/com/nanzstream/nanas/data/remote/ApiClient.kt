@@ -17,10 +17,12 @@ object ApiClient {
     private val gson = Gson()
 
     // Enforce IPv4 first to avoid mobile network IPv6 timeout routing issues
-    private val ipv4Dns = Dns { hostname ->
-        val addresses = Dns.SYSTEM.lookup(hostname)
-        val v4 = addresses.filterIsInstance<Inet4Address>()
-        if (v4.isNotEmpty()) v4 else addresses
+    private val ipv4Dns = object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            val addresses = Dns.SYSTEM.lookup(hostname)
+            val v4 = addresses.filterIsInstance<Inet4Address>()
+            return if (v4.isNotEmpty()) v4 else addresses
+        }
     }
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
