@@ -18,6 +18,7 @@ import com.nanzstream.nanas.data.model.CategoryType
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.ui.components.GlassBottomBar
 import com.nanzstream.nanas.ui.components.GlassTopBar
+import com.nanzstream.nanas.ui.navigation.RouteEncoder
 import com.nanzstream.nanas.ui.navigation.Screen
 import com.nanzstream.nanas.ui.screens.*
 import com.nanzstream.nanas.ui.theme.DarkBg
@@ -79,25 +80,14 @@ class MainActivity : ComponentActivity() {
                             navController = navController,
                             startDestination = Screen.Home.route
                         ) {
-                            // Home Screen
+                            // Home Screen (100% Pure Portal Gateway)
                             composable(Screen.Home.route) {
                                 HomeScreen(
-                                    repository = repository,
-                                    onMediaClick = { item ->
-                                        navController.navigate(
-                                            Screen.Detail.createRoute(item.category.id, item.slug ?: item.id)
-                                        )
+                                    onNavigateToCategory = { categoryId ->
+                                        navController.navigate(Screen.Categories.createRoute(categoryId))
                                     },
-                                    onCategoryViewAll = { cat ->
-                                        navController.navigate(Screen.Categories.createRoute(cat.id))
-                                    },
-                                    onLiveTvClick = {
+                                    onNavigateToLiveTv = {
                                         navController.navigate(Screen.LiveTv.route)
-                                    },
-                                    onContinueClick = { item ->
-                                        navController.navigate(
-                                            Screen.Detail.createRoute(item.category.id, item.lastTargetUrl)
-                                        )
                                     }
                                 )
                             }
@@ -129,7 +119,7 @@ class MainActivity : ComponentActivity() {
                             ) { backStack ->
                                 val categoryStr = backStack.arguments?.getString("category") ?: "anime"
                                 val rawIdOrSlug = backStack.arguments?.getString("idOrSlug") ?: ""
-                                val idOrSlug = URLDecoder.decode(rawIdOrSlug, "UTF-8")
+                                val idOrSlug = RouteEncoder.decode(rawIdOrSlug)
                                 val category = CategoryType.fromId(categoryStr)
 
                                 DetailScreen(
@@ -170,8 +160,10 @@ class MainActivity : ComponentActivity() {
                                 )
                             ) { backStack ->
                                 val categoryStr = backStack.arguments?.getString("category") ?: "anime"
-                                val title = URLDecoder.decode(backStack.arguments?.getString("title") ?: "", "UTF-8")
-                                val targetUrl = URLDecoder.decode(backStack.arguments?.getString("targetUrl") ?: "", "UTF-8")
+                                val rawTitle = backStack.arguments?.getString("title") ?: ""
+                                val rawTargetUrl = backStack.arguments?.getString("targetUrl") ?: ""
+                                val title = RouteEncoder.decode(rawTitle)
+                                val targetUrl = RouteEncoder.decode(rawTargetUrl)
                                 val episode = backStack.arguments?.getInt("episode") ?: 1
 
                                 VideoPlayerScreen(
@@ -184,7 +176,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
-                            // Manga Reader Screen
+                            // Manga / Webtoon Reader Screen
                             composable(
                                 route = Screen.Reader.route,
                                 arguments = listOf(
@@ -193,9 +185,12 @@ class MainActivity : ComponentActivity() {
                                     navArgument("chapterTitle") { type = NavType.StringType }
                                 )
                             ) { backStack ->
-                                val mangaId = backStack.arguments?.getString("mangaId") ?: "1"
-                                val chapterId = backStack.arguments?.getString("chapterId") ?: "1"
-                                val chapterTitle = URLDecoder.decode(backStack.arguments?.getString("chapterTitle") ?: "", "UTF-8")
+                                val rawMangaId = backStack.arguments?.getString("mangaId") ?: "1"
+                                val rawChapterId = backStack.arguments?.getString("chapterId") ?: "1"
+                                val rawChapterTitle = backStack.arguments?.getString("chapterTitle") ?: ""
+                                val mangaId = RouteEncoder.decode(rawMangaId)
+                                val chapterId = RouteEncoder.decode(rawChapterId)
+                                val chapterTitle = RouteEncoder.decode(rawChapterTitle)
 
                                 MangaReaderScreen(
                                     mangaId = mangaId,

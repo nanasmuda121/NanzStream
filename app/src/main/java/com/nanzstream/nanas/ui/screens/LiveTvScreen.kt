@@ -28,8 +28,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -52,13 +56,40 @@ fun LiveTvScreen(
     var isStreamLoading by remember { mutableStateOf(false) }
 
     val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            playWhenReady = true
-        }
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+            .setDefaultRequestProperties(
+                mapOf(
+                    "Referer" to "https://www.cubmu.com/",
+                    "Origin" to "https://www.cubmu.com"
+                )
+            )
+
+        val mediaSourceFactory = DefaultMediaSourceFactory(context)
+            .setDataSourceFactory(httpDataSourceFactory)
+
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .build().apply {
+                playWhenReady = true
+            }
     }
 
     DisposableEffect(Unit) {
+        val listener = object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                error.printStackTrace()
+                isStreamLoading = false
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED) {
+                    isStreamLoading = false
+                }
+            }
+        }
+        exoPlayer.addListener(listener)
         onDispose {
+            exoPlayer.removeListener(listener)
             exoPlayer.release()
         }
     }
@@ -79,17 +110,18 @@ fun LiveTvScreen(
             val streamRes = repository.getStream(CategoryType.LIVETV, ch.slug ?: ch.id)
             val streamUrl = streamRes?.directHlsUrl
             if (!streamUrl.isNullOrEmpty()) {
-                val mediaItem = MediaItem.Builder()
-                    .setUri(streamUrl)
-                    .setMimeType(MimeTypes.APPLICATION_M3U8)
-                    .build()
-                exoPlayer.setMediaItem(mediaItem)
+                val mediaItemBuilder = MediaItem.Builder().setUri(streamUrl)
+                if (streamUrl.contains(".mpd")) {
+                    mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
+                } else if (streamUrl.contains(".m3u8")) {
+                    mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+                }
+                exoPlayer.setMediaItem(mediaItemBuilder.build())
                 exoPlayer.prepare()
                 exoPlayer.play()
             }
         } catch (e: Exception) {
             e.printStackTrace()
-        } finally {
             isStreamLoading = false
         }
     }

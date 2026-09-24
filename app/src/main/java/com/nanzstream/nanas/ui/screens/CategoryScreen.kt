@@ -32,7 +32,7 @@ fun CategoryScreen(
     onMediaClick: (MediaItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedCategory by remember { mutableStateOf(initialCategory) }
+    var selectedCategory by remember(initialCategory) { mutableStateOf(initialCategory) }
     var items by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
