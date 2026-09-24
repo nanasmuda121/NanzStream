@@ -18,7 +18,7 @@ class StorageManager(context: Context) {
         private const val KEY_WATCHLIST = "key_watchlist"
         private const val KEY_CONTINUE = "key_continue"
         private const val KEY_READER_MODE = "key_reader_mode" // "webtoon" or "paged"
-        const val DEFAULT_API_URL = "https://blackdragon-flax.vercel.app/api"
+        const val DEFAULT_API_URL = "https://nanzstream-api.vercel.app/api"
     }
 
     var apiBaseUrl: String

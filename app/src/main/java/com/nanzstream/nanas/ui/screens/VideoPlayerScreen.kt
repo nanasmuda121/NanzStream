@@ -82,7 +82,8 @@ fun VideoPlayerScreen(
         try {
             val res = repository.getStream(category, targetUrl, currentEpisode)
             streamResult = res
-            selectedServer = res?.servers?.firstOrNull()
+            val firstServer = res?.servers?.firstOrNull()
+            selectedServer = firstServer
 
             // Save to Continue Watching
             NanzStreamApp.storage.saveContinueWatching(
@@ -97,10 +98,10 @@ fun VideoPlayerScreen(
             )
 
             // Setup ExoPlayer if direct HLS available
-            val directHls = res?.directHlsUrl
-            if (!directHls.isNullOrEmpty()) {
+            val activeDirectHls = if (firstServer?.isDirectHls == true) firstServer.url else res?.directHlsUrl
+            if (!activeDirectHls.isNullOrEmpty() && (firstServer == null || firstServer.isDirectHls)) {
                 val mediaItem = MediaItem.Builder()
-                    .setUri(directHls)
+                    .setUri(activeDirectHls)
                     .setMimeType(MimeTypes.APPLICATION_M3U8)
                     .build()
                 exoPlayer.setMediaItem(mediaItem)
@@ -111,6 +112,22 @@ fun VideoPlayerScreen(
             e.printStackTrace()
         } finally {
             isLoading = false
+        }
+    }
+
+    // Switch stream when user selects different server
+    LaunchedEffect(selectedServer) {
+        val s = selectedServer ?: return@LaunchedEffect
+        if (s.isDirectHls) {
+            val mediaItem = MediaItem.Builder()
+                .setUri(s.url)
+                .setMimeType(MimeTypes.APPLICATION_M3U8)
+                .build()
+            exoPlayer.setMediaItem(mediaItem)
+            exoPlayer.prepare()
+            exoPlayer.play()
+        } else {
+            exoPlayer.pause()
         }
     }
 
@@ -173,10 +190,16 @@ fun VideoPlayerScreen(
             if (isLoading) {
                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
             } else {
-                val isDirect = selectedServer?.isDirectHls == true || !streamResult?.directHlsUrl.isNullOrEmpty()
-                val currentIframe = selectedServer?.url ?: streamResult?.iframePlayerUrl
+                val curServer = selectedServer
+                val isDirect = if (curServer != null) {
+                    curServer.isDirectHls
+                } else {
+                    !streamResult?.directHlsUrl.isNullOrEmpty()
+                }
+                val directHls = if (curServer?.isDirectHls == true) curServer.url else streamResult?.directHlsUrl
+                val iframeUrl = if (curServer != null && !curServer.isDirectHls) curServer.url else streamResult?.iframePlayerUrl
 
-                if (isDirect && !streamResult?.directHlsUrl.isNullOrEmpty()) {
+                if (isDirect && !directHls.isNullOrEmpty()) {
                     // ExoPlayer Native View
                     AndroidView(
                         factory = { ctx ->
@@ -191,7 +214,7 @@ fun VideoPlayerScreen(
                         },
                         modifier = Modifier.fillMaxSize()
                     )
-                } else if (!currentIframe.isNullOrEmpty()) {
+                } else if (!iframeUrl.isNullOrEmpty()) {
                     // Sandboxed WebView for Embed Player
                     AndroidView(
                         factory = { ctx ->
@@ -219,12 +242,12 @@ fun VideoPlayerScreen(
                                         return false
                                     }
                                 }
-                                loadUrl(currentIframe)
+                                loadUrl(iframeUrl)
                             }
                         },
                         update = { webView ->
-                            if (webView.url != currentIframe) {
-                                webView.loadUrl(currentIframe)
+                            if (webView.url != iframeUrl) {
+                                webView.loadUrl(iframeUrl)
                             }
                         },
                         modifier = Modifier.fillMaxSize()

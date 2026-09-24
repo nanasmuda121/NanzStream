@@ -66,19 +66,10 @@ fun SearchScreen(
         delay(400) // debounce
         isSearching = true
         try {
-            val allItems = mutableListOf<MediaItem>()
-            allItems.addAll(repository.getDramaLatest(1).filter { it.title.contains(query, ignoreCase = true) })
-            allItems.addAll(repository.getAnimeLatest(1).filter { it.title.contains(query, ignoreCase = true) })
-            allItems.addAll(repository.getDonghuaLatest(1).filter { it.title.contains(query, ignoreCase = true) })
-            allItems.addAll(repository.getMangaHome().filter { it.title.contains(query, ignoreCase = true) })
-
-            results = if (selectedCategory == CategoryType.ALL) {
-                allItems
-            } else {
-                allItems.filter { it.category == selectedCategory }
-            }
+            results = repository.search(selectedCategory, query)
         } catch (e: Exception) {
             e.printStackTrace()
+            results = emptyList()
         } finally {
             isSearching = false
         }
