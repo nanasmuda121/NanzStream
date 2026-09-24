@@ -40,6 +40,20 @@ class NanzStreamApp : Application(), ImageLoaderFactory {
             }
             .okHttpClient {
                 OkHttpClient.Builder()
+                    .addInterceptor { chain ->
+                        val req = chain.request()
+                        val urlStr = req.url.toString()
+                        val builder = req.newBuilder()
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                        if (urlStr.contains("webtoon") || urlStr.contains("pstatic.net")) {
+                            builder.header("Referer", "https://www.webtoons.com/")
+                        } else if (urlStr.contains("samehadaku")) {
+                            builder.header("Referer", "https://samehadaku.li/")
+                        } else if (urlStr.contains("anichin")) {
+                            builder.header("Referer", "https://anichin.ro/")
+                        }
+                        chain.proceed(builder.build())
+                    }
                     .connectTimeout(15, TimeUnit.SECONDS)
                     .readTimeout(15, TimeUnit.SECONDS)
                     .build()

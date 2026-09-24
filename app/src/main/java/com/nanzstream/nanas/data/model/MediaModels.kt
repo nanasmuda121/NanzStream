@@ -4,10 +4,9 @@ import com.google.gson.annotations.SerializedName
 
 enum class CategoryType(val id: String, val displayName: String, val icon: String) {
     ALL("all", "Semua", "⚡"),
-    DRAMA("drama", "Drama", "🎭"),
-    MANGA("manga", "Komik", "📖"),
     ANIME("anime", "Anime", "⚔️"),
     DONGHUA("donghua", "Donghua", "🐉"),
+    MANGA("manga", "Webtoon", "📖"),
     LIVETV("livetv", "Live TV", "📺"),
     VOD("vod", "VOD Series", "🎬");
 

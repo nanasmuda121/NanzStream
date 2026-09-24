@@ -105,9 +105,9 @@ class MainActivity : ComponentActivity() {
                             // Category Browse Screen
                             composable(
                                 route = Screen.Categories.route,
-                                arguments = listOf(navArgument("category") { defaultValue = "drama" })
+                                arguments = listOf(navArgument("category") { defaultValue = "anime" })
                             ) { backStack ->
-                                val catParam = backStack.arguments?.getString("category") ?: "drama"
+                                val catParam = backStack.arguments?.getString("category") ?: "anime"
                                 CategoryScreen(
                                     initialCategory = CategoryType.fromId(catParam),
                                     repository = repository,
@@ -127,7 +127,7 @@ class MainActivity : ComponentActivity() {
                                     navArgument("idOrSlug") { type = NavType.StringType }
                                 )
                             ) { backStack ->
-                                val categoryStr = backStack.arguments?.getString("category") ?: "drama"
+                                val categoryStr = backStack.arguments?.getString("category") ?: "anime"
                                 val rawIdOrSlug = backStack.arguments?.getString("idOrSlug") ?: ""
                                 val idOrSlug = URLDecoder.decode(rawIdOrSlug, "UTF-8")
                                 val category = CategoryType.fromId(categoryStr)
@@ -169,7 +169,7 @@ class MainActivity : ComponentActivity() {
                                     navArgument("episode") { type = NavType.IntType }
                                 )
                             ) { backStack ->
-                                val categoryStr = backStack.arguments?.getString("category") ?: "drama"
+                                val categoryStr = backStack.arguments?.getString("category") ?: "anime"
                                 val title = URLDecoder.decode(backStack.arguments?.getString("title") ?: "", "UTF-8")
                                 val targetUrl = URLDecoder.decode(backStack.arguments?.getString("targetUrl") ?: "", "UTF-8")
                                 val episode = backStack.arguments?.getInt("episode") ?: 1

@@ -4,10 +4,20 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 // Pure Monochrome Glassmorphism Palette
-val DarkBg = Color(0xFF060608)
+val DarkBg = Color(0xFF0A0A0C)
 val DarkSurface = Color(0xFF0D0D12)
-val DarkCard = Color(0xFF13131A)
-val DarkCardElevated = Color(0xFF1B1B24)
+val DarkCard = Color(0xFF121214)
+val DarkCardElevated = Color(0xFF18181B)
+
+// Tailwind HTML Reference Palette
+val CanvasBlack = Color(0xFF0A0A0C)
+val SurfaceCharcoal = Color(0xFF121214)
+val SurfaceElevated = Color(0xFF18181B)
+val SurfaceHighlight = Color(0xFF27272A)
+val SurfaceActive = Color(0xFF3F3F46)
+val TextDim = Color(0xFF71717A)
+val BorderHairline = Color(0x14FFFFFF)
+val BorderProminent = Color(0x33FFFFFF)
 
 // Frosted Glass Colors
 val GlassBackground = Color(0x12FFFFFF)

@@ -8,23 +8,40 @@ import kotlinx.coroutines.withContext
 
 class MediaRepository {
 
+    private val landingImageUrl =
+        "https://lh3.googleusercontent.com/aida/AEtjO1XHJnWN9lRW-OQXDo6t_COw9w9vro0ZCbWwm220Z0onJDIPXpwObbXl4N2P1UIBLf2PNXgBF9Y0Ll1okKQcpJ3YpoETIxvNMHB0_45Zm-vBI1El7oPxJRTySdg_ffkKBg4tSwY27sRJZl0pIrDQutO9Ab6IzfvoGG7GZry1z729ZDHqE-HBvk7X0UYUnaxXbm92rOmiKT0g9O1js7PFy7WUleE0Pl7FxYFCxnKxYgqaoZIH_mmi_Rma8i0=s884"
+
     suspend fun getHomeSpotlight(): List<MediaItem> = withContext(Dispatchers.IO) {
         val list = mutableListOf<MediaItem>()
+
+        // 1. Always feature user's requested landing page banner
+        list.add(
+            MediaItem(
+                id = "spotlight_landing",
+                title = "NanzStream • Premium Entertainment",
+                category = CategoryType.ALL,
+                thumbnail = landingImageUrl,
+                badge = "All-in-One Hub",
+                synopsis = "Streaming Anime Samehadaku, Animasi Donghua Anichin, Baca Komik Webtoon, dan Live TV 80+ Channel dalam desain 100% Monochrome Glassmorphism.",
+                rating = "9.9",
+                year = "2026",
+                genres = listOf("Anime", "Donghua", "Webtoon", "Live TV")
+            )
+        )
+
         try {
-            val drakor = DrakorScraper.getLatest(1)
             val anime = AnimeScraper.getLatest(1)
             val donghua = DonghuaScraper.getLatest(1)
-            val manga = MangaScraper.getHome()
+            val webtoon = WebtoonScraper.getHome()
 
             if (anime.isNotEmpty()) list.add(anime[0])
-            if (drakor.isNotEmpty()) list.add(drakor[0])
             if (donghua.isNotEmpty()) list.add(donghua[0])
-            if (manga.isNotEmpty()) list.add(manga[0])
+            if (webtoon.isNotEmpty()) list.add(webtoon[0])
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        if (list.isEmpty()) {
+        if (list.size <= 1) {
             list.addAll(getFallbackSpotlight())
         }
         list
@@ -40,16 +57,6 @@ class MediaRepository {
         getFallbackAnime()
     }
 
-    suspend fun getDramaLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
-        try {
-            val res = DrakorScraper.getLatest(page)
-            if (res.isNotEmpty()) return@withContext res
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        getFallbackDrama()
-    }
-
     suspend fun getDonghuaLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
         try {
             val res = DonghuaScraper.getLatest(page)
@@ -62,12 +69,12 @@ class MediaRepository {
 
     suspend fun getMangaHome(): List<MediaItem> = withContext(Dispatchers.IO) {
         try {
-            val res = MangaScraper.getHome()
+            val res = WebtoonScraper.getHome()
             if (res.isNotEmpty()) return@withContext res
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        getFallbackManga()
+        getFallbackWebtoon()
     }
 
     suspend fun getLiveTvChannels(): List<LiveTvChannelItem> = withContext(Dispatchers.IO) {
@@ -96,20 +103,17 @@ class MediaRepository {
             val results = mutableListOf<MediaItem>()
             try {
                 when (category) {
-                    CategoryType.DRAMA -> results.addAll(DrakorScraper.search(query, page))
                     CategoryType.ANIME -> results.addAll(AnimeScraper.search(query, page))
                     CategoryType.DONGHUA -> results.addAll(DonghuaScraper.search(query, page))
-                    CategoryType.MANGA -> results.addAll(MangaScraper.search(query))
+                    CategoryType.MANGA -> results.addAll(WebtoonScraper.search(query))
                     CategoryType.ALL -> {
-                        val drakorAsync = async { DrakorScraper.search(query, 1) }
                         val animeAsync = async { AnimeScraper.search(query, 1) }
                         val donghuaAsync = async { DonghuaScraper.search(query, 1) }
-                        val mangaAsync = async { MangaScraper.search(query) }
+                        val webtoonAsync = async { WebtoonScraper.search(query) }
 
                         results.addAll(animeAsync.await())
-                        results.addAll(drakorAsync.await())
                         results.addAll(donghuaAsync.await())
-                        results.addAll(mangaAsync.await())
+                        results.addAll(webtoonAsync.await())
                     }
                     else -> {}
                 }
@@ -123,10 +127,9 @@ class MediaRepository {
         withContext(Dispatchers.IO) {
             try {
                 when (category) {
-                    CategoryType.DRAMA -> DrakorScraper.getDetail(idOrSlug)
                     CategoryType.ANIME -> AnimeScraper.getDetail(idOrSlug)
                     CategoryType.DONGHUA -> DonghuaScraper.getDetail(idOrSlug)
-                    CategoryType.MANGA -> MangaScraper.getDetail(idOrSlug)
+                    CategoryType.MANGA -> WebtoonScraper.getDetail(idOrSlug)
                     CategoryType.VOD -> CubMuScraper.getVodDetail(idOrSlug)
                     else -> null
                 }
@@ -140,7 +143,6 @@ class MediaRepository {
         withContext(Dispatchers.IO) {
             try {
                 when (category) {
-                    CategoryType.DRAMA -> DrakorScraper.getStream(targetUrlOrSlug, episode)
                     CategoryType.ANIME -> AnimeScraper.getStream(targetUrlOrSlug)
                     CategoryType.DONGHUA -> DonghuaScraper.getStream(targetUrlOrSlug)
                     CategoryType.LIVETV -> CubMuScraper.getLiveStream(targetUrlOrSlug)
@@ -155,7 +157,7 @@ class MediaRepository {
 
     suspend fun getMangaPages(chapterId: String): List<MangaPageItem> = withContext(Dispatchers.IO) {
         try {
-            val res = MangaScraper.getPages(chapterId)
+            val res = WebtoonScraper.getPages(chapterId)
             if (res.isNotEmpty()) return@withContext res
         } catch (e: Exception) {
             e.printStackTrace()
@@ -166,22 +168,10 @@ class MediaRepository {
     // Fallbacks
     private fun getFallbackSpotlight(): List<MediaItem> = listOf(
         MediaItem(
-            id = "spotlight_1",
-            title = "A Parasite's Heart (2026)",
-            category = CategoryType.DRAMA,
-            thumbnail = "https://convert.d-cdn.me/convert/aHR0cHM6Ly9hc3NldHMuZC1jZG4ubWUvaW1nLzIwMjYvMDkvODQ5LXlhbG9hazRmLmpwZw--/180x200/1.jpg",
-            slug = "a-parasites-heart-2026",
-            badge = "Episode 8 • Ongoing",
-            synopsis = "Drama misteri thriller romantis tentang intrik gelap di balik keluarga konglomerat Korea.",
-            rating = "9.1",
-            year = "2026",
-            genres = listOf("Thriller", "Mystery", "Romance")
-        ),
-        MediaItem(
-            id = "spotlight_2",
+            id = "spotlight_anime",
             title = "Otome Game Sekai wa Mob ni Kibishii 2",
             category = CategoryType.ANIME,
-            thumbnail = "https://samehadaku.li/wp-content/uploads/2026/01/Otome-Game-Sekai-wa-Mob-ni-Kibishii-Sekai-desu-Season-2.jpg",
+            thumbnail = "https://i3.wp.com/samehadaku.li/wp-content/uploads/2026/07/1783509113-1566-158337.jpg",
             slug = "otome-game-sekai-wa-mob-ni-kibishii-sekai-desu-2",
             badge = "Episode 12",
             synopsis = "Leon bereinkarnasi ke dalam dunia video game otome yang brutal.",
@@ -192,20 +182,16 @@ class MediaRepository {
     )
 
     private fun getFallbackAnime(): List<MediaItem> = listOf(
-        MediaItem("anime_1", "Otome Game Sekai wa Mob ni Kibishii 2 Ep 12", CategoryType.ANIME, "https://samehadaku.li/wp-content/uploads/2026/01/Otome-Game-Sekai-wa-Mob-ni-Kibishii-Sekai-desu-Season-2.jpg", "https://samehadaku.li/otome-game-sekai-wa-mob-ni-kibishii-sekai-desu-2-episode-12-subtitle-indonesia/", "otome-game-sekai-wa-mob-ni-kibishii-sekai-desu-2", "Ep 12"),
+        MediaItem("anime_1", "Otome Game Sekai wa Mob ni Kibishii 2 Ep 12", CategoryType.ANIME, "https://i3.wp.com/samehadaku.li/wp-content/uploads/2026/07/1783509113-1566-158337.jpg", "https://samehadaku.li/otome-game-sekai-wa-mob-ni-kibishii-sekai-desu-2-episode-12-subtitle-indonesia/", "otome-game-sekai-wa-mob-ni-kibishii-sekai-desu-2", "Ep 12"),
         MediaItem("anime_2", "Solo Leveling Season 2 Ep 8", CategoryType.ANIME, "https://samehadaku.li/wp-content/uploads/2024/01/Solo-Leveling.jpg", "https://samehadaku.li/solo-leveling-season-2-episode-8/", "solo-leveling-season-2", "Ep 8")
-    )
-
-    private fun getFallbackDrama(): List<MediaItem> = listOf(
-        MediaItem("drama_1", "A Parasite's Heart (2026)", CategoryType.DRAMA, "https://convert.d-cdn.me/convert/aHR0cHM6Ly9hc3NldHMuZC1jZG4ubWUvaW1nLzIwMjYvMDkvODQ5LXlhbG9hazRmLmpwZw--/180x200/1.jpg", "https://drakorid.co/nonton/a-parasites-heart-2026/", "a-parasites-heart-2026", "Eps 8")
     )
 
     private fun getFallbackDonghua(): List<MediaItem> = listOf(
         MediaItem("donghua_1", "Lord of the Ancient God Grave", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2023/10/Lord-of-the-Ancient-God-Grave.jpg", "https://anichin.ro/lord-of-the-ancient-god-grave-episode-485-subtitle-indonesia/", "lord-of-the-ancient-god-grave", "Ep 485")
     )
 
-    private fun getFallbackManga(): List<MediaItem> = listOf(
-        MediaItem("1", "Kijima-san & Yamada-san", CategoryType.MANGA, "https://global-api.manga-up.com/asset/h1F/en/manga_main/1029.webp", slug = "1", badge = "Ch 66")
+    private fun getFallbackWebtoon(): List<MediaItem> = listOf(
+        MediaItem("4834", "The Greatest Estate Developer", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20250205_17/1738719483097MIbul_JPEG/4834.jpg?type=q90", "https://www.webtoons.com/id/fantasy/the-greatest-estate-developer/list?title_no=4834", "4834", "Webtoon")
     )
 
     private fun getFallbackLiveTv(): List<LiveTvChannelItem> = listOf(

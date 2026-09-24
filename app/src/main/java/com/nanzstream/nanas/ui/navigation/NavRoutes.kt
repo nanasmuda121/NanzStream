@@ -3,7 +3,7 @@ package com.nanzstream.nanas.ui.navigation
 sealed class Screen(val route: String) {
     data object Home : Screen("home")
     data object Categories : Screen("categories?category={category}") {
-        fun createRoute(category: String = "drama"): String = "categories?category=$category"
+        fun createRoute(category: String = "anime"): String = "categories?category=$category"
     }
     data object Detail : Screen("detail/{category}/{idOrSlug}") {
         fun createRoute(category: String, idOrSlug: String): String =

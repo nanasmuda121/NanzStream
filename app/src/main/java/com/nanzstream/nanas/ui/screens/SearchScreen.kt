@@ -51,10 +51,9 @@ fun SearchScreen(
 
     val categories = listOf(
         CategoryType.ALL,
-        CategoryType.DRAMA,
-        CategoryType.MANGA,
         CategoryType.ANIME,
-        CategoryType.DONGHUA
+        CategoryType.DONGHUA,
+        CategoryType.MANGA
     )
 
     // Debounced search
@@ -136,7 +135,7 @@ fun SearchScreen(
                     decorationBox = { innerTextField ->
                         if (query.isEmpty()) {
                             Text(
-                                text = "Cari judul anime, drama, komik...",
+                                text = "Cari anime, donghua, webtoon...",
                                 color = TextMuted,
                                 fontSize = 13.sp
                             )

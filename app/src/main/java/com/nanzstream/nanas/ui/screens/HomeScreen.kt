@@ -11,7 +11,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -29,9 +31,7 @@ import com.nanzstream.nanas.data.model.CategoryType
 import com.nanzstream.nanas.data.model.ContinueWatchingItem
 import com.nanzstream.nanas.data.model.MediaItem
 import com.nanzstream.nanas.data.repository.MediaRepository
-import com.nanzstream.nanas.ui.components.GlassPill
-import com.nanzstream.nanas.ui.components.HeroBanner
-import com.nanzstream.nanas.ui.components.MediaItemCard
+import com.nanzstream.nanas.ui.components.*
 import com.nanzstream.nanas.ui.theme.*
 
 @Composable
@@ -46,7 +46,6 @@ fun HomeScreen(
     var selectedCategory by remember { mutableStateOf(CategoryType.ALL) }
     var spotlightItems by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var animeList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
-    var dramaList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var donghuaList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var mangaList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var vodList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
@@ -59,7 +58,6 @@ fun HomeScreen(
         try {
             spotlightItems = repository.getHomeSpotlight()
             animeList = repository.getAnimeLatest(1)
-            dramaList = repository.getDramaLatest(1)
             donghuaList = repository.getDonghuaLatest(1)
             mangaList = repository.getMangaHome()
             vodList = repository.getVodList(1)
@@ -73,10 +71,15 @@ fun HomeScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DarkBg),
+            .background(CanvasBlack),
         contentPadding = PaddingValues(bottom = 100.dp)
     ) {
-        // 1. Hero Spotlight Carousel
+        // 1. Portal Gateway Header (Branding & SYSTEM ONLINE)
+        item {
+            PortalGatewayHeader()
+        }
+
+        // 2. Hero Spotlight Carousel (with Landing Page Image)
         item {
             Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 if (spotlightItems.isNotEmpty()) {
@@ -88,12 +91,63 @@ fun HomeScreen(
             }
         }
 
-        // 2. Category Selector Pills
+        // 3. Portal Gateway Multi-Verse Hub Intro
+        item {
+            PortalGatewayIntro()
+        }
+
+        // 4. Three Universe Cards (Anime, Komik, Donghua)
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Universe 1: Anime
+                UniverseCard(
+                    title = "ANIME",
+                    subtitle = "Japanese Animation, OVA, Movies & Simulcast Mingguan.",
+                    actionText = "Masuk Portal Anime",
+                    badgeCount = "1.4k+ TITLES",
+                    badgeHighlight = "SIMULCAST HD",
+                    icon = Icons.Default.PlayArrow,
+                    watermarkText = "▶",
+                    onClick = { onCategoryViewAll(CategoryType.ANIME) }
+                )
+
+                // Universe 2: Komik
+                UniverseCard(
+                    title = "KOMIK",
+                    subtitle = "Manga, Manhwa Korea & Webtoon Vertikal Tanpa Iklan.",
+                    actionText = "Buka Perpustakaan Komik",
+                    badgeCount = "3.8k+ TITLES",
+                    badgeHighlight = "VERTICAL READER",
+                    icon = Icons.Default.MenuBook,
+                    watermarkText = "📖",
+                    onClick = { onCategoryViewAll(CategoryType.MANGA) }
+                )
+
+                // Universe 3: Donghua
+                UniverseCard(
+                    title = "DONGHUA",
+                    subtitle = "Animasi 3D Chinese, Xianxia, Wuxia & Petualangan Spiritual.",
+                    actionText = "Jelajahi Donghua",
+                    badgeCount = "850+ TITLES",
+                    badgeHighlight = "CULTIVATION 4K",
+                    icon = Icons.Default.AutoAwesome,
+                    watermarkText = "🐉",
+                    onClick = { onCategoryViewAll(CategoryType.DONGHUA) }
+                )
+            }
+        }
+
+        // 5. Category Selector Pills
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp)
+                    .padding(vertical = 16.dp)
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -119,10 +173,10 @@ fun HomeScreen(
             }
         }
 
-        // 3. Continue Watching & Reading Bar (if any)
+        // 6. Continue Watching & Reading Bar (if any)
         if (continueList.isNotEmpty()) {
             item {
-                Column(modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)) {
+                Column(modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)) {
                     SectionHeader(
                         title = "Lanjutkan Nonton & Baca",
                         subtitle = "Aktivitas terakhir Anda",
@@ -140,7 +194,7 @@ fun HomeScreen(
             }
         }
 
-        // 4. Loading indicator or Rows
+        // 7. Loading indicator or Rows
         if (isLoading) {
             item {
                 Box(
@@ -164,17 +218,6 @@ fun HomeScreen(
                 )
             }
 
-            // Row: Drama Korea & Asia
-            item {
-                MediaSectionRow(
-                    title = "🎭 Drama Korea & Asia",
-                    subtitle = "Episode update Drakor.id",
-                    items = dramaList,
-                    onMediaClick = onMediaClick,
-                    onViewAllClick = { onCategoryViewAll(CategoryType.DRAMA) }
-                )
-            }
-
             // Row: Donghua (Animasi 3D China)
             item {
                 MediaSectionRow(
@@ -186,11 +229,11 @@ fun HomeScreen(
                 )
             }
 
-            // Row: Komik & Manga Populer
+            // Row: Komik Webtoon
             item {
                 MediaSectionRow(
-                    title = "📖 Komik & Manga Pilihan",
-                    subtitle = "Manga UP Reader resmi",
+                    title = "📖 Komik Webtoon Pilihan",
+                    subtitle = "Line Webtoon Indonesia resmi",
                     items = mangaList,
                     onMediaClick = onMediaClick,
                     onViewAllClick = { onCategoryViewAll(CategoryType.MANGA) }
@@ -212,6 +255,12 @@ fun HomeScreen(
                     onViewAllClick = { onCategoryViewAll(CategoryType.VOD) }
                 )
             }
+        }
+
+        // 8. Profile Quick Switch & Protocol Status Footer
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+            PortalGatewayFooter()
         }
     }
 }
@@ -305,7 +354,7 @@ fun LiveTvHighlightBanner(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
+            .border(1.dp, BorderHairline, RoundedCornerShape(16.dp))
             .background(DarkCard)
             .clickable(onClick = onLiveTvClick)
             .padding(16.dp)
@@ -372,7 +421,7 @@ fun ContinueItemCard(
         modifier = Modifier
             .width(200.dp)
             .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
+            .border(1.dp, BorderHairline, RoundedCornerShape(12.dp))
             .background(DarkCard)
             .clickable(onClick = onClick)
             .padding(10.dp)

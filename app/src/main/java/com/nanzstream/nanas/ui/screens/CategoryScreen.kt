@@ -37,10 +37,9 @@ fun CategoryScreen(
     var isLoading by remember { mutableStateOf(true) }
 
     val categories = listOf(
-        CategoryType.DRAMA,
-        CategoryType.MANGA,
         CategoryType.ANIME,
         CategoryType.DONGHUA,
+        CategoryType.MANGA,
         CategoryType.VOD
     )
 
@@ -48,12 +47,11 @@ fun CategoryScreen(
         isLoading = true
         try {
             items = when (selectedCategory) {
-                CategoryType.DRAMA -> repository.getDramaLatest(1)
-                CategoryType.MANGA -> repository.getMangaHome()
                 CategoryType.ANIME -> repository.getAnimeLatest(1)
                 CategoryType.DONGHUA -> repository.getDonghuaLatest(1)
+                CategoryType.MANGA -> repository.getMangaHome()
                 CategoryType.VOD -> repository.getVodList(1)
-                else -> repository.getDramaLatest(1)
+                else -> repository.getAnimeLatest(1)
             }
         } catch (e: Exception) {
             e.printStackTrace()
