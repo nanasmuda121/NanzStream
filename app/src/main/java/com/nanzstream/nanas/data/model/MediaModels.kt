@@ -74,7 +74,8 @@ data class MangaPageItem(
 data class StreamServerItem(
     val name: String,
     val url: String,
-    val isDirectHls: Boolean = false
+    val isDirectHls: Boolean = false,
+    val audioUrl: String? = null
 )
 
 data class DownloadItem(
@@ -88,7 +89,8 @@ data class StreamResult(
     val directHlsUrl: String? = null,
     val iframePlayerUrl: String? = null,
     val servers: List<StreamServerItem> = emptyList(),
-    val downloads: List<DownloadItem> = emptyList()
+    val downloads: List<DownloadItem> = emptyList(),
+    val audioUrl: String? = null
 )
 
 data class LiveTvChannelItem(

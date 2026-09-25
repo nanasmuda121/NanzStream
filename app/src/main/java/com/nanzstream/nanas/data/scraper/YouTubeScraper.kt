@@ -1,6 +1,7 @@
 package com.nanzstream.nanas.data.scraper
 
 import com.nanzstream.nanas.data.model.CategoryType
+import com.nanzstream.nanas.data.model.DownloadItem
 import com.nanzstream.nanas.data.model.EpisodeItem
 import com.nanzstream.nanas.data.model.MediaDetail
 import com.nanzstream.nanas.data.model.MediaItem
@@ -17,7 +18,17 @@ import org.json.JSONObject
 object YouTubeScraper {
     private const val INNERTUBE_API = "https://www.youtube.com/youtubei/v1"
     private const val WEB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    private const val IOS_USER_AGENT = "com.google.ios.youtube/21.03.2 (iPhone16,2; U; CPU iOS 18_7_2 like Mac OS X; id_ID)"
+    const val IOS_USER_AGENT = "com.google.ios.youtube/21.03.2 (iPhone16,2; U; CPU iOS 18_7_2 like Mac OS X; id_ID)"
+
+    private fun fixUrl(url: String?): String {
+        if (url.isNullOrBlank()) return ""
+        val trimmed = url.trim()
+        return when {
+            trimmed.startsWith("//") -> "https:$trimmed"
+            trimmed.startsWith("/") -> "https://www.youtube.com$trimmed"
+            else -> trimmed
+        }
+    }
 
     private suspend fun postJson(endpoint: String, body: JSONObject, isIos: Boolean = false): JSONObject? = withContext(Dispatchers.IO) {
         try {
@@ -94,18 +105,24 @@ object YouTubeScraper {
                         for (j in 0 until itemSection.length()) {
                             val it = itemSection.getJSONObject(j)
 
-                            // 1. Standard Video
+                            // 1. Standard Video / Short
                             val vr = it.optJSONObject("videoRenderer")
                             if (vr != null) {
                                 val vId = vr.optString("videoId")
                                 val title = vr.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
                                 val channel = vr.optJSONObject("ownerText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                                val channelId = vr.optJSONObject("ownerText")?.optJSONArray("runs")?.optJSONObject(0)
-                                    ?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")?.optString("browseId")
                                 val thumbArr = vr.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                                val thumb = thumbArr?.optJSONObject(thumbArr.length() - 1)?.optString("url") ?: ""
+                                val thumb = fixUrl(thumbArr?.optJSONObject(thumbArr.length() - 1)?.optString("url"))
                                 val dur = vr.optJSONObject("lengthText")?.optString("simpleText") ?: ""
                                 val views = vr.optJSONObject("viewCountText")?.optString("simpleText") ?: ""
+
+                                // Extract channel avatar for video
+                                val chThumbRaw = vr.optJSONObject("channelThumbnailSupportedRenderers")
+                                    ?.optJSONObject("channelThumbnailWithLinkRenderer")
+                                    ?.optJSONObject("thumbnail")
+                                    ?.optJSONArray("thumbnails")
+                                    ?.let { arr -> arr.optJSONObject(arr.length() - 1)?.optString("url") }
+                                val chThumb = fixUrl(chThumbRaw)
 
                                 if (vId.isNotBlank() && !title.isNullOrBlank() && !list.any { it.id == vId }) {
                                     list.add(
@@ -132,7 +149,7 @@ object YouTubeScraper {
                                 val cTitle = cr.optJSONObject("title")?.optString("simpleText")
                                 val subs = cr.optJSONObject("subscriberCountText")?.optString("simpleText") ?: "Channel"
                                 val cThumbArr = cr.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                                val cThumb = cThumbArr?.optJSONObject(cThumbArr.length() - 1)?.optString("url") ?: ""
+                                val cThumb = fixUrl(cThumbArr?.optJSONObject(cThumbArr.length() - 1)?.optString("url"))
 
                                 if (cId.isNotBlank() && !cTitle.isNullOrBlank() && !list.any { it.id == cId }) {
                                     list.add(
@@ -167,15 +184,18 @@ object YouTubeScraper {
     }
 
     suspend fun getShorts(): List<MediaItem> = withContext(Dispatchers.IO) {
-        search("#shorts indonesia trending")
+        search("shorts indonesia trending viral")
     }
 
     suspend fun getDetail(videoIdOrChannelId: String): MediaDetail? = withContext(Dispatchers.IO) {
         try {
-            val cleanId = videoIdOrChannelId.removePrefix("https://www.youtube.com/watch?v=")
-                .removePrefix("https://youtu.be/")
-                .removePrefix("https://www.youtube.com/channel/")
-                .split("&").firstOrNull()?.trim() ?: videoIdOrChannelId
+            val cleanId = when {
+                videoIdOrChannelId.contains("/shorts/") -> Regex("""/shorts/([a-zA-Z0-9_\-]+)""").find(videoIdOrChannelId)?.groupValues?.get(1) ?: videoIdOrChannelId
+                videoIdOrChannelId.contains("v=") -> Regex("""v=([a-zA-Z0-9_\-]+)""").find(videoIdOrChannelId)?.groupValues?.get(1) ?: videoIdOrChannelId
+                videoIdOrChannelId.contains("youtu.be/") -> Regex("""youtu\.be/([a-zA-Z0-9_\-]+)""").find(videoIdOrChannelId)?.groupValues?.get(1) ?: videoIdOrChannelId
+                videoIdOrChannelId.contains("youtube.com/channel/") -> videoIdOrChannelId.removePrefix("https://www.youtube.com/channel/").split("/").firstOrNull() ?: videoIdOrChannelId
+                else -> videoIdOrChannelId.removePrefix("https://www.youtube.com/watch?v=").trim()
+            }
 
             // If it's a channel ID (starts with UC)
             if (cleanId.startsWith("UC")) {
@@ -200,29 +220,72 @@ object YouTubeScraper {
             val durMinutes = "${lengthSec / 60}:${(lengthSec % 60).toString().padStart(2, '0')}"
 
             val thumbArr = vd.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-            val thumb = thumbArr?.optJSONObject(thumbArr.length() - 1)?.optString("url")
-                ?: "https://i.ytimg.com/vi/$cleanId/hqdefault.jpg"
-
-            val episodes = listOf(
-                EpisodeItem(
-                    id = "https://www.youtube.com/watch?v=$cleanId",
-                    episodeNumber = "1",
-                    title = title,
-                    url = "https://www.youtube.com/watch?v=$cleanId"
-                )
+            val thumb = fixUrl(
+                thumbArr?.optJSONObject(thumbArr.length() - 1)?.optString("url")
+                    ?: "https://i.ytimg.com/vi/$cleanId/hqdefault.jpg"
             )
+
+            // Also fetch next endpoint to get related videos and channel avatar
+            var channelAvatar: String? = null
+            val relatedVideos = mutableListOf<EpisodeItem>()
+            try {
+                val nextBody = JSONObject().apply {
+                    put("context", createWebContext())
+                    put("videoId", cleanId)
+                }
+                val nextJson = postJson("next", nextBody)
+                val nextStr = nextJson?.toString() ?: ""
+                val avatarMatch = Regex("""\"avatar\":\{.*?\"url\":\"([^\"]+)\"""").find(nextStr)
+                if (avatarMatch != null) {
+                    channelAvatar = fixUrl(avatarMatch.groupValues[1])
+                }
+
+                // Extract related videos
+                val vidsMatches = Regex("""\"videoId\":\"([a-zA-Z0-9_\-]{11})\".*?\"text\":\"([^\"]+)\"""").findAll(nextStr)
+                var count = 1
+                for (m in vidsMatches) {
+                    val rId = m.groupValues[1]
+                    val rTitle = m.groupValues[2]
+                    if (rId != cleanId && !relatedVideos.any { it.url.contains(rId) }) {
+                        count++
+                        relatedVideos.add(
+                            EpisodeItem(
+                                id = "https://www.youtube.com/watch?v=$rId",
+                                episodeNumber = count.toString(),
+                                title = rTitle,
+                                url = "https://www.youtube.com/watch?v=$rId"
+                            )
+                        )
+                        if (relatedVideos.size >= 15) break
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            val episodes = mutableListOf<EpisodeItem>().apply {
+                add(
+                    EpisodeItem(
+                        id = "https://www.youtube.com/watch?v=$cleanId",
+                        episodeNumber = "1",
+                        title = title,
+                        url = "https://www.youtube.com/watch?v=$cleanId"
+                    )
+                )
+                addAll(relatedVideos)
+            }
 
             MediaDetail(
                 id = cleanId,
                 title = title,
                 category = CategoryType.YOUTUBE,
                 thumbnail = thumb,
-                backdrop = thumb,
-                synopsis = desc.ifBlank { "Diunggah oleh: $author\nTotal tayangan: $views views" },
+                backdrop = channelAvatar ?: thumb,
+                synopsis = desc.ifBlank { "Channel: $author\nTotal tayangan: $views views\nDurasi: $durMinutes" },
                 genres = listOf("YouTube", author),
-                status = "Duration: $durMinutes",
+                status = "Durasi: $durMinutes",
                 rating = "${views}x ditonton",
-                totalEpisodes = "Video",
+                totalEpisodes = if (relatedVideos.isNotEmpty()) "${episodes.size} Video" else "Video",
                 episodes = episodes
             )
         } catch (e: Exception) {
@@ -231,7 +294,7 @@ object YouTubeScraper {
         }
     }
 
-    private suspend fun getChannelDetail(channelId: String): MediaDetail? = withContext(Dispatchers.IO) {
+    suspend fun getChannelDetail(channelId: String): MediaDetail? = withContext(Dispatchers.IO) {
         try {
             val body = JSONObject().apply {
                 put("context", createWebContext())
@@ -247,12 +310,31 @@ object YouTubeScraper {
                 ?: c4H?.optString("title")
                 ?: "YouTube Channel"
 
-            val avatarArr = c4H?.optJSONObject("avatar")?.optJSONArray("thumbnails")
-            val avatar = avatarArr?.optJSONObject(avatarArr.length() - 1)?.optString("url") ?: ""
-            val bannerArr = c4H?.optJSONObject("banner")?.optJSONArray("thumbnails")
-            val banner = bannerArr?.optJSONObject(bannerArr.length() - 1)?.optString("url") ?: avatar
+            // Modern YouTube WEB stores avatar in pageHeaderViewModel
+            val vm = pageH?.optJSONObject("content")?.optJSONObject("pageHeaderViewModel")
+            val avatarSources = vm?.optJSONObject("image")
+                ?.optJSONObject("decoratedAvatarViewModel")
+                ?.optJSONObject("avatar")
+                ?.optJSONObject("avatarViewModel")
+                ?.optJSONObject("image")
+                ?.optJSONArray("sources")
 
-            val subs = c4H?.optJSONObject("subscriberCountText")?.optString("simpleText") ?: ""
+            val bannerSources = vm?.optJSONObject("banner")
+                ?.optJSONObject("imageBannerViewModel")
+                ?.optJSONObject("image")
+                ?.optJSONArray("sources")
+
+            val rawAvatar = avatarSources?.optJSONObject(avatarSources.length() - 1)?.optString("url")
+                ?: c4H?.optJSONObject("avatar")?.optJSONArray("thumbnails")?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
+                ?: ""
+
+            val rawBanner = bannerSources?.optJSONObject(bannerSources.length() - 1)?.optString("url")
+                ?: c4H?.optJSONObject("banner")?.optJSONArray("thumbnails")?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
+                ?: rawAvatar
+
+            val avatar = fixUrl(rawAvatar)
+            val banner = fixUrl(rawBanner)
+            val subs = c4H?.optJSONObject("subscriberCountText")?.optString("simpleText") ?: "Channel"
 
             // Scrape videos in channel tabs
             val episodes = mutableListOf<EpisodeItem>()
@@ -302,7 +384,6 @@ object YouTubeScraper {
             }
 
             if (episodes.isEmpty()) {
-                // If channel tab didn't load videos directly, fetch search by channel name
                 val searchVids = search(title)
                 searchVids.forEachIndexed { idx, vid ->
                     episodes.add(
@@ -337,12 +418,12 @@ object YouTubeScraper {
 
     suspend fun getStream(videoIdOrUrl: String, episode: Int = 1): StreamResult? = withContext(Dispatchers.IO) {
         try {
-            val vId = if (videoIdOrUrl.contains("v=")) {
-                Regex("""v=([a-zA-Z0-9_\-]+)""").find(videoIdOrUrl)?.groupValues?.get(1) ?: videoIdOrUrl
-            } else if (videoIdOrUrl.contains("youtu.be/")) {
-                Regex("""youtu\.be/([a-zA-Z0-9_\-]+)""").find(videoIdOrUrl)?.groupValues?.get(1) ?: videoIdOrUrl
-            } else {
-                videoIdOrUrl.removePrefix("https://www.youtube.com/watch?v=").trim()
+            val vId = when {
+                videoIdOrUrl.contains("/shorts/") -> Regex("""/shorts/([a-zA-Z0-9_\-]+)""").find(videoIdOrUrl)?.groupValues?.get(1) ?: videoIdOrUrl
+                videoIdOrUrl.contains("v=") -> Regex("""v=([a-zA-Z0-9_\-]+)""").find(videoIdOrUrl)?.groupValues?.get(1) ?: videoIdOrUrl
+                videoIdOrUrl.contains("youtu.be/") -> Regex("""youtu\.be/([a-zA-Z0-9_\-]+)""").find(videoIdOrUrl)?.groupValues?.get(1) ?: videoIdOrUrl
+                videoIdOrUrl.startsWith("http") -> videoIdOrUrl.substringAfterLast("/").substringBefore("?")
+                else -> videoIdOrUrl.trim()
             }
 
             val body = JSONObject().apply {
@@ -352,36 +433,143 @@ object YouTubeScraper {
 
             val json = postJson("player", body, isIos = true) ?: return@withContext null
             val sd = json.optJSONObject("streamingData")
-            val hlsManifest = sd?.optString("hlsManifestUrl")
             val title = json.optJSONObject("videoDetails")?.optString("title") ?: "YouTube Video"
 
+            val hlsManifest = sd?.optString("hlsManifestUrl")
+            val adaptiveArr = sd?.optJSONArray("adaptiveFormats")
+            val progressiveArr = sd?.optJSONArray("formats")
+
+            var bestAudioUrl: String? = null
+            val videoFormats = mutableListOf<Triple<String, String, Int>>() // label, url, itag
+            val downloadItems = mutableListOf<DownloadItem>()
+
+            if (adaptiveArr != null) {
+                // Find best audio URL (prefer AAC 128k, itag 140)
+                for (i in 0 until adaptiveArr.length()) {
+                    val af = adaptiveArr.getJSONObject(i)
+                    val url = af.optString("url")
+                    val mime = af.optString("mimeType")
+                    if (url.isNotBlank() && mime.contains("audio/mp4")) {
+                        if (bestAudioUrl == null || af.optString("audioQuality") == "AUDIO_QUALITY_MEDIUM") {
+                            bestAudioUrl = url
+                        }
+                    }
+                }
+
+                // If no audio/mp4 found, take any audio format with url
+                if (bestAudioUrl == null) {
+                    for (i in 0 until adaptiveArr.length()) {
+                        val af = adaptiveArr.getJSONObject(i)
+                        val url = af.optString("url")
+                        val mime = af.optString("mimeType")
+                        if (url.isNotBlank() && mime.startsWith("audio/")) {
+                            bestAudioUrl = url
+                            break
+                        }
+                    }
+                }
+
+                // Collect video formats with direct MP4 url
+                for (i in 0 until adaptiveArr.length()) {
+                    val af = adaptiveArr.getJSONObject(i)
+                    val url = af.optString("url")
+                    val mime = af.optString("mimeType")
+                    val qLabel = af.optString("qualityLabel")
+                    val itag = af.optInt("itag")
+
+                    if (url.isNotBlank() && mime.contains("video/mp4") && qLabel.isNotBlank()) {
+                        if (!videoFormats.any { it.first == qLabel }) {
+                            videoFormats.add(Triple(qLabel, url, itag))
+                            downloadItems.add(
+                                DownloadItem(
+                                    name = "Video MP4 ($qLabel)",
+                                    url = url,
+                                    quality = qLabel
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Also add audio download if present
+            if (!bestAudioUrl.isNullOrBlank()) {
+                downloadItems.add(
+                    DownloadItem(
+                        name = "Audio M4A / AAC",
+                        url = bestAudioUrl,
+                        quality = "128kbps"
+                    )
+                )
+            }
+
+            // Check progressive formats (audio+video in 1 stream)
+            var directProgressiveUrl: String? = null
+            if (progressiveArr != null) {
+                for (i in 0 until progressiveArr.length()) {
+                    val pf = progressiveArr.getJSONObject(i)
+                    val url = pf.optString("url")
+                    if (url.isNotBlank()) {
+                        directProgressiveUrl = url
+                        break
+                    }
+                }
+            }
+
+            val servers = mutableListOf<StreamServerItem>()
+
+            // 1. If progressive direct MP4 exists (single file with video + audio)
+            if (!directProgressiveUrl.isNullOrBlank()) {
+                servers.add(
+                    StreamServerItem(
+                        name = "YouTube Direct MP4",
+                        url = directProgressiveUrl,
+                        isDirectHls = false,
+                        audioUrl = null
+                    )
+                )
+            }
+
+            // 2. Add adaptive MP4 servers (merged video + audio via ExoPlayer MergingMediaSource)
+            // Sort by resolution: 1080p, 720p, 480p, 360p, 240p
+            videoFormats.sortedByDescending { triple ->
+                Regex("""(\d+)p""").find(triple.first)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            }.forEach { triple ->
+                servers.add(
+                    StreamServerItem(
+                        name = "YouTube ${triple.first} MP4 (Direct)",
+                        url = triple.second,
+                        isDirectHls = false,
+                        audioUrl = bestAudioUrl
+                    )
+                )
+            }
+
+            // 3. If HLS manifest is available, add as fallback
             if (!hlsManifest.isNullOrBlank() && hlsManifest.startsWith("http")) {
+                servers.add(
+                    0,
+                    StreamServerItem(
+                        name = "Google HLS Direct Stream",
+                        url = hlsManifest,
+                        isDirectHls = true,
+                        audioUrl = null
+                    )
+                )
+            }
+
+            if (servers.isNotEmpty()) {
+                val primaryServer = servers.first()
                 StreamResult(
                     title = title,
-                    directHlsUrl = hlsManifest,
+                    directHlsUrl = primaryServer.url,
                     iframePlayerUrl = null,
-                    servers = listOf(
-                        StreamServerItem(
-                            name = "Google HLS Direct Stream",
-                            url = hlsManifest,
-                            isDirectHls = true
-                        )
-                    )
+                    servers = servers,
+                    downloads = downloadItems,
+                    audioUrl = primaryServer.audioUrl
                 )
             } else {
-                // Fallback to WEB embed if HLS manifest is unavailable
-                StreamResult(
-                    title = title,
-                    directHlsUrl = null,
-                    iframePlayerUrl = "https://www.youtube.com/embed/$vId?autoplay=1",
-                    servers = listOf(
-                        StreamServerItem(
-                            name = "YouTube Player",
-                            url = "https://www.youtube.com/embed/$vId?autoplay=1",
-                            isDirectHls = false
-                        )
-                    )
-                )
+                null
             }
         } catch (e: Exception) {
             e.printStackTrace()

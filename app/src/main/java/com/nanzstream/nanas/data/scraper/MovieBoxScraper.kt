@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
+import org.jsoup.Jsoup
 
 object MovieBoxScraper {
     private const val BASE_URL = "https://themoviebox.xyz/id"
@@ -18,6 +19,21 @@ object MovieBoxScraper {
     private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
     private var cachedHomeSubjects: List<MediaItem>? = null
+
+    private suspend fun fetchHtml(url: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val req = Request.Builder()
+                .url(url)
+                .header("User-Agent", USER_AGENT)
+                .header("Referer", "$BASE_URL/")
+                .build()
+            val resp = ApiClient.okHttpClient.newCall(req).execute()
+            if (resp.isSuccessful) resp.body?.string() else null
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
 
     private suspend fun fetchJson(url: String): JSONObject? = withContext(Dispatchers.IO) {
         try {
@@ -109,31 +125,90 @@ object MovieBoxScraper {
     suspend fun getDetail(urlOrPath: String): MediaDetail? = withContext(Dispatchers.IO) {
         try {
             val slug = urlOrPath.removePrefix(BASE_URL)
+                .removePrefix("https://themoviebox.xyz")
                 .removePrefix("/id/detail/")
                 .removePrefix("/detail/")
                 .removePrefix("/id/")
                 .trim('/')
 
-            val json = fetchJson("$API_BASE/detail?detailPath=$slug")
-            val data = json?.optJSONObject("data")
-            val subject = data?.optJSONObject("subject") ?: return@withContext null
+            // 1. Check cached subjects from home
+            if (cachedHomeSubjects.isNullOrEmpty()) {
+                getLatest(1)
+            }
+            val cached = cachedHomeSubjects?.find { it.slug == slug || it.id.contains(slug) }
 
-            val title = subject.optString("title").ifBlank { "Movie Detail" }
-            val desc = subject.optString("description")
-            val releaseDate = subject.optString("releaseDate")
-            val rating = subject.optString("imdbRatingValue").ifBlank { "7.9" }
-            val genres = subject.optString("genre").split(",").map { it.trim() }.filter { it.isNotBlank() }
-            val coverObj = subject.optJSONObject("cover")
-            val coverUrl = coverObj?.optString("url") ?: ""
+            // 2. Fetch full HTML SSR page for detail & video stream
+            val detailUrl = "$BASE_URL/detail/$slug"
+            val html = fetchHtml(detailUrl)
 
-            val trailerUrl = subject.optJSONObject("trailer")?.optJSONObject("videoAddress")?.optString("url") ?: ""
+            var title = cached?.title ?: ""
+            var synopsis = cached?.synopsis ?: ""
+            var coverUrl = cached?.thumbnail ?: ""
+            var rating = cached?.rating ?: "7.9"
+            var year = cached?.year ?: "2024"
+            var genres = cached?.genres ?: listOf("Movie", "Drama")
+            var videoStreamUrl = ""
+
+            if (!html.isNullOrBlank()) {
+                val doc = Jsoup.parse(html)
+
+                if (title.isBlank()) {
+                    title = doc.selectFirst("h1")?.text()?.trim()
+                        ?: doc.selectFirst("meta[property='og:title']")?.attr("content")?.replace(" - Moviebox", "")?.trim()
+                        ?: "Film Layar Lebar"
+                }
+
+                if (synopsis.isBlank()) {
+                    synopsis = doc.selectFirst("meta[property='og:description']")?.attr("content")
+                        ?: doc.selectFirst("meta[name='description']")?.attr("content")
+                        ?: ""
+                }
+
+                if (coverUrl.isBlank()) {
+                    coverUrl = doc.selectFirst("meta[property='og:image']")?.attr("content")
+                        ?: doc.selectFirst("img")?.attr("src")
+                        ?: ""
+                }
+
+                // Extract direct Video stream from VideoObject json-ld
+                doc.select("script[type='application/ld+json']").forEach { script ->
+                    val data = script.data()
+                    if (data.contains("VideoObject")) {
+                        try {
+                            val j = JSONObject(data)
+                            if (j.optString("@type") == "VideoObject") {
+                                val cUrl = j.optString("contentUrl")
+                                if (cUrl.isNotBlank() && cUrl.startsWith("http")) {
+                                    videoStreamUrl = cUrl
+                                }
+                                val desc = j.optString("description")
+                                if (desc.isNotBlank() && synopsis.isBlank()) {
+                                    synopsis = desc
+                                }
+                            }
+                        } catch (e: Exception) {}
+                    }
+                }
+
+                // Regex fallback for macdn mp4 trailer/stream
+                if (videoStreamUrl.isBlank()) {
+                    val m = Regex("""\"(https://macdn\.aoneroom\.com/[^\"]+\.mp4)\"""").find(html)
+                    if (m != null) {
+                        videoStreamUrl = m.groupValues[1]
+                    }
+                }
+            }
+
+            if (title.isBlank()) {
+                title = slug.replace("-", " ").capitalize()
+            }
 
             val episodes = listOf(
                 EpisodeItem(
                     id = "$BASE_URL/detail/$slug",
                     episodeNumber = "1",
                     title = "Full Movie",
-                    url = if (trailerUrl.isNotBlank()) trailerUrl else "$BASE_URL/detail/$slug"
+                    url = if (videoStreamUrl.isNotBlank()) videoStreamUrl else "$BASE_URL/detail/$slug"
                 )
             )
 
@@ -143,11 +218,11 @@ object MovieBoxScraper {
                 category = CategoryType.MOVIES,
                 thumbnail = coverUrl,
                 backdrop = coverUrl,
-                synopsis = desc,
+                synopsis = synopsis.ifBlank { "Tonton film layar lebar $title dalam kualitas HD Subtitle Indonesia." },
                 genres = genres,
-                status = "Released",
+                status = "Released $year",
                 rating = rating,
-                releaseDate = releaseDate,
+                releaseDate = year,
                 totalEpisodes = "Full Movie",
                 episodes = episodes
             )
@@ -160,6 +235,7 @@ object MovieBoxScraper {
     suspend fun getStream(urlOrPath: String, episode: Int = 1): StreamResult? = withContext(Dispatchers.IO) {
         try {
             val slug = urlOrPath.removePrefix(BASE_URL)
+                .removePrefix("https://themoviebox.xyz")
                 .removePrefix("/id/detail/")
                 .removePrefix("/detail/")
                 .removePrefix("/id/")
@@ -177,7 +253,7 @@ object MovieBoxScraper {
                         StreamServerItem(
                             name = "MovieBox Direct Stream",
                             url = streamUrl,
-                            isDirectHls = true
+                            isDirectHls = false
                         )
                     )
                 )
