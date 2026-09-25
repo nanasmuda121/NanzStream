@@ -30,7 +30,17 @@ object WebtoonScraper {
                     .header("Accept-Language", "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7")
                     .build()
                 val res = ApiClient.okHttpClient.newCall(req).execute()
-                if (res.isSuccessful) res.body?.string() else null
+                if (res.isSuccessful) {
+                    res.body?.string()
+                } else if (res.code in 300..399) {
+                    val loc = res.header("Location")
+                    if (!loc.isNullOrBlank()) {
+                        val nextUrl = if (loc.startsWith("http")) loc else "$BASE_URL$loc"
+                        fetchHtml(nextUrl, referer)
+                    } else null
+                } else {
+                    null
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
                 null
@@ -212,33 +222,26 @@ object WebtoonScraper {
             ?: page1Chapters.firstOrNull()?.title?.let { Regex("""\b(\d+)\b""").find(it)?.groupValues?.get(1)?.toIntOrNull() }
             ?: 10
 
-        // Cap at 15 pages (150 chapters) to ensure instant loading without Webtoon rate-limiting
-        val estTotalPages = if (firstEpNum > 10) minOf((firstEpNum + 9) / 10, 15) else 1
+        // Only fetch up to page 3 (max 30 chapters) on initial load to ensure instant load time without Webtoon throttling
+        val estTotalPages = if (firstEpNum > 10) minOf((firstEpNum + 9) / 10, 3) else 1
 
         if (estTotalPages > 1) {
             val cleanUrl = effectiveUrl.replace(Regex("""[&?]page=\d+"""), "")
             val separator = if (cleanUrl.contains("?")) "&" else "?"
 
-            // Fetch in batches of 5 parallel requests
-            val pagesToFetch = (2..estTotalPages).toList()
-            for (batch in pagesToFetch.chunked(5)) {
-                val batchResults = batch.map { page ->
-                    async {
-                        try {
-                            val pageHtml = fetchHtml("$cleanUrl${separator}page=$page")
-                            if (pageHtml != null) parseChaptersFromDoc(Jsoup.parse(pageHtml)) else emptyList()
-                        } catch (e: Exception) {
-                            emptyList()
+            for (page in 2..estTotalPages) {
+                try {
+                    val pageHtml = fetchHtml("$cleanUrl${separator}page=$page")
+                    if (pageHtml != null) {
+                        val pageChapters = parseChaptersFromDoc(Jsoup.parse(pageHtml))
+                        for (ch in pageChapters) {
+                            if (!allChapters.any { it.id == ch.id }) {
+                                allChapters.add(ch)
+                            }
                         }
                     }
-                }.awaitAll()
-
-                for (chList in batchResults) {
-                    for (ch in chList) {
-                        if (!allChapters.any { it.id == ch.id }) {
-                            allChapters.add(ch)
-                        }
-                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
             }
         }

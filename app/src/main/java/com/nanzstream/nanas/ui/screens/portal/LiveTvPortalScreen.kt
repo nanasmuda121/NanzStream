@@ -431,7 +431,21 @@ fun LiveTvPortalScreen(
                     Player.STATE_BUFFERING -> {
                         isStreamLoading = true
                     }
-                    Player.STATE_ENDED, Player.STATE_IDLE -> {
+                    Player.STATE_ENDED -> {
+                        // Live TV stream reached segment discontinuity/socket drop - auto reconnect to live edge
+                        isStreamLoading = true
+                        try {
+                            if (exoPlayer.isCurrentMediaItemLive) {
+                                exoPlayer.seekToDefaultPosition()
+                            }
+                            exoPlayer.prepare()
+                            exoPlayer.play()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            isStreamLoading = false
+                        }
+                    }
+                    Player.STATE_IDLE -> {
                         isStreamLoading = false
                     }
                 }

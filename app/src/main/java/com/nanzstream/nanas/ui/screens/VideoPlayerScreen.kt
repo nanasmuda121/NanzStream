@@ -1,11 +1,10 @@
 package com.nanzstream.nanas.ui.screens
 
-import android.app.PictureInPictureParams
+import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
-import android.os.Build
-import android.util.Rational
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -13,7 +12,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,7 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -44,6 +44,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -56,7 +59,6 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
-import com.nanzstream.nanas.LocalIsInPipMode
 import com.nanzstream.nanas.NanzStreamApp
 import com.nanzstream.nanas.PlaybackController
 import com.nanzstream.nanas.data.model.CategoryType
@@ -66,19 +68,23 @@ import com.nanzstream.nanas.data.model.StreamServerItem
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.ui.theme.*
 
-private fun Context.findActivity(): ComponentActivity? = when (this) {
-    is ComponentActivity -> this
+private fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
 }
 
-private fun enterPipMode(context: Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val activity = context.findActivity() ?: return
-        val params = PictureInPictureParams.Builder()
-            .setAspectRatio(Rational(16, 9))
-            .build()
-        activity.enterPictureInPictureMode(params)
+private fun setSystemFullscreen(activity: Activity?, fullscreen: Boolean) {
+    activity ?: return
+    val window = activity.window
+    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+    if (fullscreen) {
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        insetsController.hide(WindowInsetsCompat.Type.systemBars())
+    } else {
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        insetsController.show(WindowInsetsCompat.Type.systemBars())
     }
 }
 
@@ -95,7 +101,6 @@ fun VideoPlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
-    val isInPipMode = LocalIsInPipMode.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var currentEpisode by remember { mutableIntStateOf(initialEpisode) }
@@ -105,6 +110,7 @@ fun VideoPlayerScreen(
     var webViewError by remember { mutableStateOf(false) }
     var webViewErrorMessage by remember { mutableStateOf<String?>(null) }
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+    var isFullscreen by remember { mutableStateOf(false) }
 
     val exoPlayer = remember {
         val defaultReferer = if (category == CategoryType.ANIME) "https://desustream.net/" else "https://anichin.ro/"
@@ -127,27 +133,16 @@ fun VideoPlayerScreen(
             }
     }
 
-    // Stop background audio playback when app is paused/stopped (except in PiP mode)
+    // Stop background audio playback when app is paused/stopped/destroyed
     DisposableEffect(lifecycleOwner) {
         PlaybackController.stopAllPlayback = {
             exoPlayer.pause()
         }
 
         val observer = LifecycleEventObserver { _, event ->
-            val inPip = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                activity?.isInPictureInPictureMode == true
-            } else false
-
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> {
-                    if (!inPip) {
-                        exoPlayer.pause()
-                    }
-                }
-                Lifecycle.Event.ON_STOP -> {
-                    if (!inPip) {
-                        exoPlayer.pause()
-                    }
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                    exoPlayer.pause()
                 }
                 Lifecycle.Event.ON_DESTROY -> {
                     exoPlayer.pause()
@@ -162,14 +157,10 @@ fun VideoPlayerScreen(
         }
     }
 
-    // When exiting PiP mode while activity is not in resumed state (e.g. dismissed with X), immediately pause
-    LaunchedEffect(isInPipMode) {
-        if (!isInPipMode) {
-            val isResumed = activity?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true
-            if (!isResumed) {
-                exoPlayer.pause()
-            }
-        }
+    // Handle back button when in fullscreen mode
+    BackHandler(enabled = isFullscreen) {
+        isFullscreen = false
+        setSystemFullscreen(activity, false)
     }
 
     DisposableEffect(Unit) {
@@ -186,6 +177,7 @@ fun VideoPlayerScreen(
         }
         exoPlayer.addListener(listener)
         onDispose {
+            setSystemFullscreen(activity, false)
             webViewInstance?.destroy()
             webViewInstance = null
             exoPlayer.removeListener(listener)
@@ -261,111 +253,97 @@ fun VideoPlayerScreen(
         }
     }
 
-    // 0. Dedicated PiP Viewport (Pure video filling floating window)
-    if (isInPipMode) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
-            contentAlignment = Alignment.Center
-        ) {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = exoPlayer
-                        useController = false
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-        return
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(DarkBg)
     ) {
-        // 1. Top Header with Back button, Title & PiP Button
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        // 1. Top Header with Back button, Title & Fullscreen toggle (Hidden when Fullscreen)
+        if (!isFullscreen) {
             Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .border(1.5.dp, GlassBorder, CircleShape)
+                            .background(SurfaceElevated)
+                            .clickable(onClick = onBackClick),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Kembali",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Column {
+                        Text(
+                            text = title,
+                            color = TextPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "${category.displayName} • Episode $currentEpisode",
+                            color = TextMuted,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Fullscreen Button in Header
                 Box(
                     modifier = Modifier
                         .size(46.dp)
                         .clip(CircleShape)
                         .border(1.5.dp, GlassBorder, CircleShape)
                         .background(SurfaceElevated)
-                        .clickable(onClick = onBackClick),
+                        .clickable {
+                            isFullscreen = true
+                            setSystemFullscreen(activity, true)
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Kembali",
+                        imageVector = Icons.Default.Fullscreen,
+                        contentDescription = "Layar Penuh",
                         tint = Color.White,
                         modifier = Modifier.size(24.dp)
                     )
                 }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Column {
-                    Text(
-                        text = title,
-                        color = TextPrimary,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
-                    Text(
-                        text = "${category.displayName} • Episode $currentEpisode",
-                        color = TextMuted,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // PiP Button
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .border(1.5.dp, GlassBorder, CircleShape)
-                    .background(SurfaceElevated)
-                    .clickable { enterPipMode(context) },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PictureInPictureAlt,
-                    contentDescription = "Picture in Picture",
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp)
-                )
             }
         }
 
         // 2. Video Player Area (ExoPlayer or Sandboxed WebView)
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(240.dp)
-                .background(Color.Black),
+            modifier = if (isFullscreen) {
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .height(240.dp)
+                    .background(Color.Black)
+            },
             contentAlignment = Alignment.Center
         ) {
             if (isLoading) {
@@ -540,12 +518,12 @@ fun VideoPlayerScreen(
                                             .clip(RoundedCornerShape(10.dp))
                                             .border(1.dp, GlassBorder, RoundedCornerShape(10.dp))
                                             .background(SurfaceElevated)
-                                        .clickable {
-                                            webViewError = false
-                                            webViewErrorMessage = null
-                                            webViewInstance?.loadUrl(iframeUrl)
-                                        }
-                                        .padding(horizontal = 16.dp),
+                                            .clickable {
+                                                webViewError = false
+                                                webViewErrorMessage = null
+                                                webViewInstance?.loadUrl(iframeUrl)
+                                            }
+                                            .padding(horizontal = 16.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
@@ -567,123 +545,174 @@ fun VideoPlayerScreen(
                     )
                 }
             }
-        }
 
-        // 3. Episode & Server Controls (BIGGER BUTTONS)
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-        ) {
-            // Next / Prev Episode Nav Buttons (ENLARGED)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Prev Ep Button (Larger)
-                Row(
+            // Floating Controls for Fullscreen Toggle overlay
+            if (isFullscreen) {
+                // Exit Fullscreen Floating Button (Top Left)
+                Box(
                     modifier = Modifier
-                        .height(50.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .border(1.5.dp, GlassBorder, RoundedCornerShape(12.dp))
-                        .background(if (currentEpisode > 1) SurfaceElevated else Color(0x0AFFFFFF))
-                        .clickable(enabled = currentEpisode > 1) { currentEpisode-- }
-                        .padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .align(Alignment.TopStart)
+                        .padding(16.dp)
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x99000000))
+                        .border(1.dp, GlassBorder, CircleShape)
+                        .clickable {
+                            isFullscreen = false
+                            setSystemFullscreen(activity, false)
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.SkipPrevious,
-                        contentDescription = "Episode Sebelumnya",
-                        tint = if (currentEpisode > 1) Color.White else TextDim,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Text(
-                        text = "Prev Ep",
-                        color = if (currentEpisode > 1) Color.White else TextDim,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                // Current Episode Title
-                Text(
-                    text = "Episode $currentEpisode",
-                    color = TextPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-
-                // Next Ep Button (Larger)
-                Row(
-                    modifier = Modifier
-                        .height(50.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .border(1.5.dp, Color.White, RoundedCornerShape(12.dp))
-                        .background(SurfaceElevated)
-                        .clickable { currentEpisode++ }
-                        .padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "Next Ep",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Icon(
-                        imageVector = Icons.Default.SkipNext,
-                        contentDescription = "Episode Selanjutnya",
+                        imageVector = Icons.Default.FullscreenExit,
+                        contentDescription = "Keluar Layar Penuh",
                         tint = Color.White,
                         modifier = Modifier.size(24.dp)
                     )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Server Selection (ENLARGED PILLS)
-            val servers = streamResult?.servers ?: emptyList()
-            if (servers.isNotEmpty()) {
-                Text(
-                    text = "PILIH SERVER PEMUTAR",
-                    color = TextDim,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(
+            } else {
+                // Quick Fullscreen button on video player overlay (Top Right)
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp)
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x88000000))
+                        .border(1.dp, GlassBorder, CircleShape)
+                        .clickable {
+                            isFullscreen = true
+                            setSystemFullscreen(activity, true)
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
-                    servers.forEach { s ->
-                        val isSelected = selectedServer?.name == s.name
-                        Box(
-                            modifier = Modifier
-                                .height(46.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .border(
-                                    1.5.dp,
-                                    if (isSelected) Color.White else BorderHairline,
-                                    RoundedCornerShape(12.dp)
+                    Icon(
+                        imageVector = Icons.Default.Fullscreen,
+                        contentDescription = "Layar Penuh",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        // 3. Episode & Server Controls (Only visible when NOT in Fullscreen)
+        if (!isFullscreen) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Next / Prev Episode Nav Buttons (ENLARGED)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Prev Ep Button (Larger)
+                    Row(
+                        modifier = Modifier
+                            .height(50.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.5.dp, GlassBorder, RoundedCornerShape(12.dp))
+                            .background(if (currentEpisode > 1) SurfaceElevated else Color(0x0AFFFFFF))
+                            .clickable(enabled = currentEpisode > 1) { currentEpisode-- }
+                            .padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = "Episode Sebelumnya",
+                            tint = if (currentEpisode > 1) Color.White else TextDim,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = "Prev Ep",
+                            color = if (currentEpisode > 1) Color.White else TextDim,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // Current Episode Title
+                    Text(
+                        text = "Episode $currentEpisode",
+                        color = TextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+
+                    // Next Ep Button (Larger)
+                    Row(
+                        modifier = Modifier
+                            .height(50.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.5.dp, Color.White, RoundedCornerShape(12.dp))
+                            .background(SurfaceElevated)
+                            .clickable { currentEpisode++ }
+                            .padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Next Ep",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Icon(
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = "Episode Selanjutnya",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Server Selection (ENLARGED PILLS)
+                val servers = streamResult?.servers ?: emptyList()
+                if (servers.isNotEmpty()) {
+                    Text(
+                        text = "PILIH SERVER PEMUTAR",
+                        color = TextDim,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        servers.forEach { s ->
+                            val isSelected = selectedServer?.name == s.name
+                            Box(
+                                modifier = Modifier
+                                    .height(46.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(
+                                        1.5.dp,
+                                        if (isSelected) Color.White else BorderHairline,
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .background(if (isSelected) Color.White else SurfaceElevated)
+                                    .clickable { selectedServer = s }
+                                    .padding(horizontal = 20.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = s.name,
+                                    color = if (isSelected) CanvasBlack else TextPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
                                 )
-                                .background(if (isSelected) Color.White else SurfaceElevated)
-                                .clickable { selectedServer = s }
-                                .padding(horizontal = 20.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = s.name,
-                                color = if (isSelected) CanvasBlack else TextPrimary,
-                                fontSize = 14.sp,
-                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
-                            )
+                            }
                         }
                     }
                 }

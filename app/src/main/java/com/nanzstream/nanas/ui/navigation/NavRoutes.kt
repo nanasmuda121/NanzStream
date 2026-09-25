@@ -16,11 +16,22 @@ object RouteEncoder {
 
     fun decode(encoded: String): String {
         return try {
+            var padded = encoded.trim()
+            val rem = padded.length % 4
+            if (rem > 0) {
+                padded += "=".repeat(4 - rem)
+            }
             val bytes = Base64.decode(
-                encoded,
-                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+                padded,
+                Base64.URL_SAFE or Base64.NO_WRAP
             )
-            String(bytes, Charsets.UTF_8)
+            val decodedStr = String(bytes, Charsets.UTF_8)
+            val allowedChars = "-_.~%/?&=:+"
+            if (decodedStr.isNotBlank() && (decodedStr.startsWith("http") || decodedStr.all { it.isLetterOrDigit() || it in allowedChars })) {
+                decodedStr
+            } else {
+                java.net.URLDecoder.decode(encoded, "UTF-8")
+            }
         } catch (e: Exception) {
             try {
                 java.net.URLDecoder.decode(encoded, "UTF-8")
