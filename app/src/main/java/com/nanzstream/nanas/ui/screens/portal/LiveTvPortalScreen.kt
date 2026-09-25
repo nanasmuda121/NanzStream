@@ -253,9 +253,11 @@ fun LiveTvPortalScreen(
     var streamError by remember { mutableStateOf<String?>(null) }
     var reloadTrigger by remember { mutableIntStateOf(0) }
 
-    // Live TV Feature States: Fullscreen, Controls Auto-hide, Resize Mode
+    // Live TV Feature States: Fullscreen, Controls Auto-hide, Resize Mode, Play/Pause
     var isFullscreen by remember { mutableStateOf(false) }
     var showPlayerControls by remember { mutableStateOf(true) }
+    var isPlaying by remember { mutableStateOf(true) }
+    var controlsTrigger by remember { mutableIntStateOf(0) }
     var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
 
     val exoPlayer = remember {
@@ -305,8 +307,8 @@ fun LiveTvPortalScreen(
         }
     }
 
-    // Auto-hide channel badge and server switcher button after 3 seconds
-    LaunchedEffect(showPlayerControls, selectedChannel, useBackupServer, isFullscreen) {
+    // Auto-hide controls (channel badge, server switch, play/pause, player buttons) after 3 seconds of inactivity
+    LaunchedEffect(showPlayerControls, controlsTrigger) {
         if (showPlayerControls) {
             delay(3000L)
             showPlayerControls = false
@@ -322,6 +324,10 @@ fun LiveTvPortalScreen(
     // Player error and state listeners
     DisposableEffect(Unit) {
         val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 error.printStackTrace()
                 isStreamLoading = false
@@ -539,6 +545,9 @@ fun LiveTvPortalScreen(
                         indication = null
                     ) {
                         showPlayerControls = !showPlayerControls
+                        if (showPlayerControls) {
+                            controlsTrigger++
+                        }
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -651,158 +660,44 @@ fun LiveTvPortalScreen(
                     }
                 }
 
-                // Controls Overlay with 3-Second Auto-Hide
-                AnimatedVisibility(
+                // Controls Overlay with 3-Second Auto-Hide, Center Play/Pause, and Fullscreen Controls
+                LiveTvControlsOverlay(
                     visible = showPlayerControls,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
+                    isPlaying = isPlaying,
+                    selectedChannel = selectedChannel,
+                    useBackupServer = useBackupServer,
+                    resizeMode = resizeMode,
+                    isFullscreen = isFullscreen,
+                    onPlayPauseClick = {
+                        if (exoPlayer.isPlaying) {
+                            exoPlayer.pause()
+                        } else {
+                            exoPlayer.play()
+                        }
+                        controlsTrigger++
+                    },
+                    onToggleServer = {
+                        useBackupServer = !useBackupServer
+                        controlsTrigger++
+                    },
+                    onCycleAspectRatio = {
+                        resizeMode = when (resizeMode) {
+                            AspectRatioFrameLayout.RESIZE_MODE_FIT -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                            else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
+                        controlsTrigger++
+                    },
+                    onEnterPip = {
+                        enterPipMode(context)
+                    },
+                    onToggleFullscreen = {
+                        isFullscreen = !isFullscreen
+                        setSystemFullscreen(activity, isFullscreen)
+                        controlsTrigger++
+                    },
                     modifier = Modifier.fillMaxSize()
-                ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        // Top-Left: Channel Name badge & Live status
-                        selectedChannel?.let { ch ->
-                            Row(
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(12.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xCC000000))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(7.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF22C55E))
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "LIVE • ${ch.name} (CH ${ch.number})",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                if (ch.backupUrl != null) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = if (useBackupServer) "• SVR 2" else "• SVR 1",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-
-                        // Top-Right: Server Switcher Button
-                        selectedChannel?.let { ch ->
-                            if (ch.backupUrl != null) {
-                                Row(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(12.dp)
-                                        .clip(RoundedCornerShape(100.dp))
-                                        .background(Color(0xCC1E293B))
-                                        .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(100.dp))
-                                        .clickable { useBackupServer = !useBackupServer }
-                                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = "Switch Server",
-                                        tint = Color(0xFF38BDF8),
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                    Text(
-                                        text = if (useBackupServer) "Server 2 (Cadangan)" else "Server 1",
-                                        color = Color.White,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-                        }
-
-                        // Bottom-Right: Advanced Player Controls (Aspect Ratio, PiP, Fullscreen)
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Aspect Ratio Toggle Button (FIT, ZOOM, FILL)
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xCC000000))
-                                    .border(1.dp, Color(0x66FFFFFF), CircleShape)
-                                    .clickable {
-                                        resizeMode = when (resizeMode) {
-                                            AspectRatioFrameLayout.RESIZE_MODE_FIT -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                                            else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                                        }
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = when (resizeMode) {
-                                        AspectRatioFrameLayout.RESIZE_MODE_FIT -> "FIT"
-                                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "ZOOM"
-                                        else -> "FILL"
-                                    },
-                                    color = Color.White,
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-
-                            // Picture-in-Picture (PiP) Button
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xCC000000))
-                                    .border(1.dp, Color(0x66FFFFFF), CircleShape)
-                                    .clickable { enterPipMode(context) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.PictureInPictureAlt,
-                                    contentDescription = "PiP Mode",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-
-                            // Fullscreen Toggle Button
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xCC000000))
-                                    .border(1.dp, Color(0x66FFFFFF), CircleShape)
-                                    .clickable {
-                                        isFullscreen = !isFullscreen
-                                        setSystemFullscreen(activity, isFullscreen)
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                                    contentDescription = "Fullscreen",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                )
             }
 
             // If Fullscreen is active, hide everything below the player!
@@ -1052,6 +947,209 @@ fun LiveTvPortalScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LiveTvControlsOverlay(
+    visible: Boolean,
+    isPlaying: Boolean,
+    selectedChannel: VerifiedChannel?,
+    useBackupServer: Boolean,
+    resizeMode: Int,
+    isFullscreen: Boolean,
+    onPlayPauseClick: () -> Unit,
+    onToggleServer: () -> Unit,
+    onCycleAspectRatio: () -> Unit,
+    onEnterPip: () -> Unit,
+    onToggleFullscreen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Top-Left: Channel Name badge & Live status (+ Back button in Fullscreen)
+            selectedChannel?.let { ch ->
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isFullscreen) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xCC000000))
+                                .border(1.dp, Color(0x66FFFFFF), CircleShape)
+                                .clickable(onClick = onToggleFullscreen),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Exit Fullscreen",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xCC000000))
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF22C55E))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "LIVE • ${ch.name} (CH ${ch.number})",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (ch.backupUrl != null) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (useBackupServer) "• SVR 2" else "• SVR 1",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Top-Right: Server Switcher Button
+            selectedChannel?.let { ch ->
+                if (ch.backupUrl != null) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp)
+                            .clip(RoundedCornerShape(100.dp))
+                            .background(Color(0xCC1E293B))
+                            .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(100.dp))
+                            .clickable(onClick = onToggleServer)
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Switch Server",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = if (useBackupServer) "Server 2 (Cadangan)" else "Server 1",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            // Center: Large Play / Pause Button
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x99000000))
+                    .border(1.5.dp, Color(0x66FFFFFF), CircleShape)
+                    .clickable(onClick = onPlayPauseClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+
+            // Bottom-Right: Advanced Player Controls (Aspect Ratio, PiP, Fullscreen)
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Aspect Ratio Toggle Button (FIT, ZOOM, FILL)
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xCC000000))
+                        .border(1.dp, Color(0x66FFFFFF), CircleShape)
+                        .clickable(onClick = onCycleAspectRatio),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = when (resizeMode) {
+                            AspectRatioFrameLayout.RESIZE_MODE_FIT -> "FIT"
+                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "ZOOM"
+                            else -> "FILL"
+                        },
+                        color = Color.White,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+
+                // Picture-in-Picture (PiP) Button
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xCC000000))
+                        .border(1.dp, Color(0x66FFFFFF), CircleShape)
+                        .clickable(onClick = onEnterPip),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PictureInPictureAlt,
+                        contentDescription = "PiP Mode",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // Fullscreen Toggle Button
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xCC000000))
+                        .border(1.dp, Color(0x66FFFFFF), CircleShape)
+                        .clickable(onClick = onToggleFullscreen),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                        contentDescription = "Fullscreen",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
         }
