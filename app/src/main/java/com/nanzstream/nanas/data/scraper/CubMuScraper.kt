@@ -188,7 +188,7 @@ object CubMuScraper {
                 }
             }
 
-            val primaryStream = hlsManifest ?: dashManifest
+            val primaryStream = dashManifest ?: hlsManifest
 
             StreamResult(
                 title = chName,

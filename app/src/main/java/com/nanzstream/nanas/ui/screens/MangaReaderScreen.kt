@@ -9,10 +9,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.SkipNext
@@ -37,6 +38,7 @@ import com.nanzstream.nanas.NanzStreamApp
 import com.nanzstream.nanas.crypto.MangaDecryptor
 import com.nanzstream.nanas.data.model.CategoryType
 import com.nanzstream.nanas.data.model.ContinueWatchingItem
+import com.nanzstream.nanas.data.model.MangaChapterItem
 import com.nanzstream.nanas.data.model.MangaPageItem
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.ui.theme.*
@@ -54,7 +56,11 @@ fun MangaReaderScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+
     var currentChapterId by remember { mutableStateOf(initialChapterId) }
+    var activeChapterTitle by remember { mutableStateOf(chapterTitle) }
+    var chapters by remember { mutableStateOf<List<MangaChapterItem>>(emptyList()) }
     var pages by remember { mutableStateOf<List<MangaPageItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var showControls by remember { mutableStateOf(true) }
@@ -65,9 +71,50 @@ fun MangaReaderScreen(
     var isDownloading by remember { mutableStateOf(false) }
     var downloadProgress by remember { mutableStateOf("") }
 
+    // Fetch chapters list for previous/next chapter navigation
+    LaunchedEffect(mangaId) {
+        try {
+            val detail = repository.getDetail(CategoryType.MANGA, mangaId)
+            if (detail != null && detail.chapters.isNotEmpty()) {
+                chapters = detail.chapters
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // Determine current index and previous / next chapters
+    val currentIdx = chapters.indexOfFirst { it.id == currentChapterId }
+    val isDescending = remember(chapters) {
+        if (chapters.size >= 2) {
+            val num0 = Regex("""\b(\d+)\b""").find(chapters[0].subtitle ?: chapters[0].title)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val num1 = Regex("""\b(\d+)\b""").find(chapters[1].subtitle ?: chapters[1].title)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            num0 > num1
+        } else true
+    }
+
+    val prevChapter = if (currentIdx != -1) {
+        if (isDescending) chapters.getOrNull(currentIdx + 1) else chapters.getOrNull(currentIdx - 1)
+    } else null
+
+    val nextChapter = if (currentIdx != -1) {
+        if (isDescending) chapters.getOrNull(currentIdx - 1) else chapters.getOrNull(currentIdx + 1)
+    } else null
+
+    // Track current visible page
+    val currentPageNumber by remember {
+        derivedStateOf {
+            if (pages.isEmpty()) 0 else (listState.firstVisibleItemIndex + 1).coerceAtMost(pages.size)
+        }
+    }
+
+    // Load pages when chapter changes
     LaunchedEffect(currentChapterId) {
         isLoading = true
         isDownloaded = NanzStreamApp.offlineManga.isChapterDownloaded(currentChapterId)
+
+        // Reset scroll position to top
+        listState.scrollToItem(0)
 
         // 1. Try loading from offline storage first
         if (isDownloaded) {
@@ -96,7 +143,7 @@ fun MangaReaderScreen(
                 title = "Komik Manga",
                 thumbnail = "",
                 category = CategoryType.MANGA,
-                lastItemTitle = chapterTitle,
+                lastItemTitle = activeChapterTitle,
                 lastTargetUrl = currentChapterId
             )
         )
@@ -118,14 +165,15 @@ fun MangaReaderScreen(
         } else {
             // Continuous Vertical Webtoon Scroll
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 50.dp)
+                contentPadding = PaddingValues(top = 56.dp, bottom = 90.dp)
             ) {
                 items(pages) { pageItem ->
                     MangaPageView(page = pageItem)
                 }
 
-                // End of Chapter Nav
+                // End of Chapter Nav Section
                 item {
                     Column(
                         modifier = Modifier
@@ -134,25 +182,110 @@ fun MangaReaderScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "Akhir dari $chapterTitle",
-                            color = TextSecondary,
-                            fontSize = 14.sp
+                            text = "Akhir dari $activeChapterTitle",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Selesai membaca seluruh ${pages.size} halaman",
+                            color = TextMuted,
+                            fontSize = 12.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        // Chapter Nav Buttons (Sebelumnya & Selanjutnya)
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // Tombol Sebelumnya
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(46.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(1.dp, if (prevChapter != null) GlassBorder else Color(0x1AFFFFFF), RoundedCornerShape(12.dp))
+                                    .background(if (prevChapter != null) SurfaceElevated else Color(0x0AFFFFFF))
+                                    .clickable(enabled = prevChapter != null) {
+                                        prevChapter?.let {
+                                            currentChapterId = it.id
+                                            activeChapterTitle = it.title
+                                        }
+                                    }
+                                    .padding(horizontal = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.SkipPrevious,
+                                        contentDescription = "Sebelumnya",
+                                        tint = if (prevChapter != null) Color.White else TextMuted,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Sebelumnya",
+                                        color = if (prevChapter != null) Color.White else TextMuted,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            // Tombol Selanjutnya
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(46.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(1.dp, if (nextChapter != null) Color.White else Color(0x1AFFFFFF), RoundedCornerShape(12.dp))
+                                    .background(if (nextChapter != null) Color.White else Color(0x0AFFFFFF))
+                                    .clickable(enabled = nextChapter != null) {
+                                        nextChapter?.let {
+                                            currentChapterId = it.id
+                                            activeChapterTitle = it.title
+                                        }
+                                    }
+                                    .padding(horizontal = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Selanjutnya",
+                                        color = if (nextChapter != null) CanvasBlack else TextMuted,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.SkipNext,
+                                        contentDescription = "Selanjutnya",
+                                        tint = if (nextChapter != null) CanvasBlack else TextMuted,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
                                 .border(1.dp, GlassBorder, RoundedCornerShape(10.dp))
                                 .background(GlassBackground)
                                 .clickable { onBackClick() }
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(horizontal = 20.dp, vertical = 10.dp),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = "Kembali ke Daftar Chapter",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                color = TextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
@@ -189,7 +322,7 @@ fun MangaReaderScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Kembali",
                             tint = Color.White,
                             modifier = Modifier.size(18.dp)
@@ -200,7 +333,7 @@ fun MangaReaderScreen(
 
                     Column {
                         Text(
-                            text = chapterTitle,
+                            text = activeChapterTitle,
                             color = TextPrimary,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
@@ -283,7 +416,7 @@ fun MangaReaderScreen(
                                         mangaId = mangaId,
                                         mangaTitle = "Komik Webtoon",
                                         chapterId = currentChapterId,
-                                        chapterTitle = chapterTitle,
+                                        chapterTitle = activeChapterTitle,
                                         thumbnail = pages.firstOrNull()?.url ?: "",
                                         pages = pages
                                     ) { downloaded, total ->
@@ -321,6 +454,111 @@ fun MangaReaderScreen(
                             color = CanvasBlack,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+            }
+        }
+
+        // Bottom Control Bar with Prev/Next Chapter and Current Page/Chapter Info
+        if (showControls) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
+                    .background(Color(0xE6090A0E))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Tombol Sebelumnya
+                Box(
+                    modifier = Modifier
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(1.dp, if (prevChapter != null) GlassBorder else Color(0x1AFFFFFF), RoundedCornerShape(10.dp))
+                        .background(if (prevChapter != null) SurfaceElevated else Color(0x0AFFFFFF))
+                        .clickable(enabled = prevChapter != null) {
+                            prevChapter?.let {
+                                currentChapterId = it.id
+                                activeChapterTitle = it.title
+                            }
+                        }
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = "Sebelumnya",
+                            tint = if (prevChapter != null) Color.White else TextMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Sebelumnya",
+                            color = if (prevChapter != null) Color.White else TextMuted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Info Chapter & Halaman Sekarang
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 6.dp)
+                ) {
+                    Text(
+                        text = activeChapterTitle,
+                        color = TextPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = if (pages.isNotEmpty()) "Halaman $currentPageNumber dari ${pages.size}" else "Memuat...",
+                        color = TextMuted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                // Tombol Selanjutnya
+                Box(
+                    modifier = Modifier
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(1.dp, if (nextChapter != null) Color.White else Color(0x1AFFFFFF), RoundedCornerShape(10.dp))
+                        .background(if (nextChapter != null) Color.White else Color(0x0AFFFFFF))
+                        .clickable(enabled = nextChapter != null) {
+                            nextChapter?.let {
+                                currentChapterId = it.id
+                                activeChapterTitle = it.title
+                            }
+                        }
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Selanjutnya",
+                            color = if (nextChapter != null) CanvasBlack else TextMuted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = "Selanjutnya",
+                            tint = if (nextChapter != null) CanvasBlack else TextMuted,
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
