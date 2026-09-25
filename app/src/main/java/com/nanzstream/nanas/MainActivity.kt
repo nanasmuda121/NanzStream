@@ -23,6 +23,10 @@ import com.nanzstream.nanas.ui.theme.NanzStreamTheme
 
 val LocalIsInPipMode = compositionLocalOf { false }
 
+object PlaybackController {
+    var stopAllPlayback: (() -> Unit)? = null
+}
+
 class MainActivity : ComponentActivity() {
 
     private val repository = MediaRepository()
@@ -34,6 +38,17 @@ class MainActivity : ComponentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isInPipMode = isInPictureInPictureMode
+        // When user closes PiP with 'X' button, activity is in background (not RESUMED)
+        if (!isInPictureInPictureMode && !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+            PlaybackController.stopAllPlayback?.invoke()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isInPipMode) {
+            PlaybackController.stopAllPlayback?.invoke()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,7 +106,7 @@ class MainActivity : ComponentActivity() {
                                 onBackToPortal = { navController.popBackStack() },
                                 onKomikClick = { item ->
                                     navController.navigate(
-                                        Screen.Detail.createRoute("manga", item.slug ?: item.id)
+                                        Screen.Detail.createRoute("manga", item.url.ifEmpty { item.slug ?: item.id })
                                     )
                                 },
                                 onReadOfflineChapter = { mangaId, chapterId, chapterTitle ->

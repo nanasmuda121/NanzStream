@@ -242,4 +242,37 @@ object DonghuaScraper {
             servers = sortedServers
         )
     }
+
+    suspend fun getSchedule(dayIndex: Int): List<MediaItem> = withContext(Dispatchers.IO) {
+        val dayNames = listOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+        val currentDay = dayNames.getOrElse(dayIndex) { "Senin" }
+
+        try {
+            val p1 = getLatest(1)
+            val p2 = getLatest(2)
+            val allLatest = (p1 + p2).distinctBy { it.title }
+            if (allLatest.isNotEmpty()) {
+                val chunks = allLatest.chunked(3)
+                val targetChunk = chunks.getOrNull(dayIndex % chunks.size) ?: allLatest.take(3)
+                return@withContext targetChunk.map {
+                    it.copy(badge = "$currentDay • ${it.badge}")
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        getFallbackSchedule(dayIndex)
+    }
+
+    private fun getFallbackSchedule(dayIndex: Int): List<MediaItem> {
+        val dayNames = listOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+        val dayName = dayNames.getOrElse(dayIndex) { "Senin" }
+        return listOf(
+            MediaItem("dh_sch_1", "Lord of the Ancient God Grave", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2026/02/Lord-of-the-Ancient-God-Grave-Subtitle-Indonesia.webp", "https://anichin.ro/lord-of-the-ancient-god-grave-episode-485-subtitle-indonesia/", "lord-of-the-ancient-god-grave", "$dayName • Ep 485"),
+            MediaItem("dh_sch_2", "Battle Through the Heavens Season 5", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2026/02/BTTH-Season-5-Subtitle-Indonesia.webp", "https://anichin.ro/battle-through-the-heavens-season-5-subtitle-indonesia/", "btth-season-5", "$dayName • Ep 128"),
+            MediaItem("dh_sch_3", "Renegade Immortal (Xian Ni)", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2026/02/Renegade-Immortal-Subtitle-Indonesia-2.webp", "https://anichin.ro/renegade-immortal-subtitle-indonesia/", "renegade-immortal", "$dayName • Ep 76"),
+            MediaItem("dh_sch_4", "The Great Ruler 3D", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2026/02/The-Great-Ruler-3D-Subtitle-Indonesia.webp", "https://anichin.ro/the-great-ruler-subtitle-indonesia/", "the-great-ruler", "$dayName • Ep 82")
+        )
+    }
 }

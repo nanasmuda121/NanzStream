@@ -49,8 +49,9 @@ fun DetailScreen(
     var detail by remember { mutableStateOf<MediaDetail?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var isBookmarked by remember { mutableStateOf(false) }
+    var retryTrigger by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(idOrSlug) {
+    LaunchedEffect(idOrSlug, retryTrigger) {
         isLoading = true
         isBookmarked = NanzStreamApp.storage.isBookmarked(idOrSlug)
         try {
@@ -74,7 +75,68 @@ fun DetailScreen(
         return
     }
 
-    val currentDetail = detail ?: return
+    val currentDetail = detail
+    if (currentDetail == null) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(DarkBg)
+                .statusBarsPadding()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .border(1.5.dp, GlassBorder, CircleShape)
+                        .background(SurfaceElevated)
+                        .clickable(onClick = onBackClick),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Kembali",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Gagal Memuat Detail Konten",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Konten tidak dapat dimuat atau koneksi terputus. Silakan coba kembali.",
+                    color = TextMuted,
+                    fontSize = 13.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White)
+                        .clickable { retryTrigger++ }
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Coba Lagi",
+                        color = CanvasBlack,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+        return
+    }
 
     LazyColumn(
         modifier = modifier

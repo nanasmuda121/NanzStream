@@ -71,6 +71,7 @@ import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.nanzstream.nanas.LocalIsInPipMode
+import com.nanzstream.nanas.PlaybackController
 import com.nanzstream.nanas.R
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.ui.theme.*
@@ -304,15 +305,37 @@ fun LiveTvPortalScreen(
             }
     }
 
+    var wasInPip by remember { mutableStateOf(false) }
+    LaunchedEffect(isInPipMode) {
+        if (isInPipMode) {
+            wasInPip = true
+        } else if (wasInPip) {
+            wasInPip = false
+            // User dismissed PiP window with 'X' button
+            if (activity != null && !activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                exoPlayer.pause()
+            }
+        }
+    }
+
     // Stop background audio playback when app is paused/stopped (except in PiP mode)
     DisposableEffect(lifecycleOwner) {
+        PlaybackController.stopAllPlayback = {
+            exoPlayer.pause()
+        }
+
         val observer = LifecycleEventObserver { _, event ->
             val inPip = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 activity?.isInPictureInPictureMode == true
             } else false
 
             when (event) {
-                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                Lifecycle.Event.ON_PAUSE -> {
+                    if (!inPip) {
+                        exoPlayer.pause()
+                    }
+                }
+                Lifecycle.Event.ON_STOP -> {
                     if (!inPip) {
                         exoPlayer.pause()
                     }
@@ -325,11 +348,15 @@ fun LiveTvPortalScreen(
                         exoPlayer.play()
                     }
                 }
+                Lifecycle.Event.ON_DESTROY -> {
+                    exoPlayer.pause()
+                }
                 else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            PlaybackController.stopAllPlayback = null
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }

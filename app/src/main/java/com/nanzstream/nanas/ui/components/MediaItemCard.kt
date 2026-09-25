@@ -39,11 +39,25 @@ fun MediaItemCard(
             .clickable(onClick = onClick)
     ) {
         // Poster Image
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(item.thumbnail)
+        val context = LocalContext.current
+        val imageModel = remember(item.thumbnail) {
+            val thumb = item.thumbnail
+            val referer = when {
+                thumb.contains("anichin") -> "https://anichin.ro/"
+                thumb.contains("otakudesu") -> "https://otakudesu.blog/"
+                thumb.contains("webtoon") -> "https://www.webtoons.com/"
+                else -> "https://www.google.com/"
+            }
+            ImageRequest.Builder(context)
+                .data(thumb)
+                .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .setHeader("Referer", referer)
                 .crossfade(true)
-                .build(),
+                .build()
+        }
+
+        AsyncImage(
+            model = imageModel,
             contentDescription = item.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()

@@ -64,7 +64,7 @@ object WebtoonScraper {
                         category = CategoryType.MANGA,
                         thumbnail = img,
                         url = fullUrl,
-                        slug = titleNo,
+                        slug = fullUrl,
                         badge = badge,
                         genres = listOf(genre)
                     )
@@ -102,7 +102,7 @@ object WebtoonScraper {
                         category = CategoryType.MANGA,
                         thumbnail = img,
                         url = fullUrl,
-                        slug = titleNo,
+                        slug = fullUrl,
                         badge = badge,
                         genres = listOf(genre)
                     )
@@ -136,7 +136,7 @@ object WebtoonScraper {
                         category = CategoryType.MANGA,
                         thumbnail = img,
                         url = fullUrl,
-                        slug = titleNo,
+                        slug = fullUrl,
                         badge = genre,
                         genres = listOf(genre)
                     )
@@ -150,12 +150,20 @@ object WebtoonScraper {
         val targetUrl = if (urlOrTitleNo.startsWith("http")) {
             urlOrTitleNo
         } else {
-            // Find in dailySchedule first or fetch direct
-            "$BASE_URL/id/fantasy/title/list?title_no=$urlOrTitleNo"
+            // Webtoon episodeList route automatically 301-redirects to the correct canonical genre & title URL
+            "$BASE_URL/episodeList?titleNo=$urlOrTitleNo"
         }
 
         val html = fetchHtml(targetUrl) ?: return@withContext null
         val doc = Jsoup.parse(html)
+
+        // Resolve real canonical URL in case of redirect or title_no query
+        val canonicalHref = doc.selectFirst("link[rel='canonical']")?.attr("href")?.trim()
+        val effectiveUrl = if (!canonicalHref.isNullOrEmpty() && canonicalHref.startsWith("http")) {
+            canonicalHref
+        } else {
+            targetUrl
+        }
 
         val title = doc.selectFirst("h1.subj, .subj_info .subj, meta[property='og:title']")?.let {
             if (it.tagName() == "meta") it.attr("content") else it.text()
@@ -204,15 +212,16 @@ object WebtoonScraper {
             ?: page1Chapters.firstOrNull()?.title?.let { Regex("""\b(\d+)\b""").find(it)?.groupValues?.get(1)?.toIntOrNull() }
             ?: 10
 
-        val estTotalPages = if (firstEpNum > 10) minOf((firstEpNum + 9) / 10, 40) else 1
+        // Cap at 15 pages (150 chapters) to ensure instant loading without Webtoon rate-limiting
+        val estTotalPages = if (firstEpNum > 10) minOf((firstEpNum + 9) / 10, 15) else 1
 
         if (estTotalPages > 1) {
-            val cleanUrl = targetUrl.replace(Regex("""[&?]page=\d+"""), "")
+            val cleanUrl = effectiveUrl.replace(Regex("""[&?]page=\d+"""), "")
             val separator = if (cleanUrl.contains("?")) "&" else "?"
 
-            // Fetch in batches of 6 parallel requests
+            // Fetch in batches of 5 parallel requests
             val pagesToFetch = (2..estTotalPages).toList()
-            for (batch in pagesToFetch.chunked(6)) {
+            for (batch in pagesToFetch.chunked(5)) {
                 val batchResults = batch.map { page ->
                     async {
                         try {
@@ -235,7 +244,7 @@ object WebtoonScraper {
         }
 
         MediaDetail(
-            id = urlOrTitleNo,
+            id = effectiveUrl,
             title = title,
             category = CategoryType.MANGA,
             thumbnail = img,

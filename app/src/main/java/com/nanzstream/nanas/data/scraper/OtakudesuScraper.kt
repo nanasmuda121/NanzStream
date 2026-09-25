@@ -207,6 +207,60 @@ object OtakudesuScraper {
         )
     }
 
+    suspend fun getSchedule(dayIndex: Int): List<MediaItem> = withContext(Dispatchers.IO) {
+        val dayNames = listOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+        val targetDay = dayNames.getOrElse(dayIndex) { "Senin" }
+
+        try {
+            // Ongoing anime pages on Otakudesu specify the day name in .epztipe
+            val p1 = getLatest(1)
+            val p2 = getLatest(2)
+            val combined = (p1 + p2).distinctBy { it.title }
+            val dayItems = combined.filter { it.badge?.contains(targetDay, ignoreCase = true) == true }
+            if (dayItems.isNotEmpty()) {
+                return@withContext dayItems
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        getFallbackSchedule(dayIndex)
+    }
+
+    private fun getFallbackSchedule(dayIndex: Int): List<MediaItem> {
+        return when (dayIndex) {
+            0 -> listOf( // Senin
+                MediaItem("otaku_sch_1", "Kuroneko to Majo no Kyoushitsu", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/04/Kuroneko-to-Majo-no-Kyoushitsu.jpg", "https://otakudesu.blog/anime/kuroneko-to-majo-no-kyoushitsu-sub-indo/", "https://otakudesu.blog/anime/kuroneko-to-majo-no-kyoushitsu-sub-indo/", "Senin • Ep 24"),
+                MediaItem("otaku_sch_2", "Sayonara Lara", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/Sayonara-Lara.jpg", "https://otakudesu.blog/anime/sayonara-lara-sub-indo/", "https://otakudesu.blog/anime/sayonara-lara-sub-indo/", "Senin • Ep 12")
+            )
+            1 -> listOf( // Selasa
+                MediaItem("otaku_sch_3", "Toumei na Yoru ni Kakeru Kimi", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/Toumei-na-Yoru-ni-Kakeru-Kimi-to-Me-ni-Mienai-Koi-wo-Shita.-Sub.jpg", "https://otakudesu.blog/anime/toumei-yoru-kakeru-kimi-sub-indo/", "https://otakudesu.blog/anime/toumei-yoru-kakeru-kimi-sub-indo/", "Selasa • Ep 12"),
+                MediaItem("otaku_sch_4", "Grand Blue Season 3", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/06/158709.jpg", "https://otakudesu.blog/anime/grand-blue-s3-sub-indo/", "https://otakudesu.blog/anime/grand-blue-s3-sub-indo/", "Selasa • Ep 10")
+            )
+            2 -> listOf( // Rabu
+                MediaItem("otaku_sch_5", "Clevatess Season 2", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/158340.jpg", "https://otakudesu.blog/anime/clevatess-s2-sub-indo/", "https://otakudesu.blog/anime/clevatess-s2-sub-indo/", "Rabu • Ep 8"),
+                MediaItem("otaku_sch_6", "Re:Zero Season 3", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/158475.jpg", "https://otakudesu.blog/anime/rezero-s3-sub-indo/", "https://otakudesu.blog/anime/rezero-s3-sub-indo/", "Rabu • Ep 12")
+            )
+            3 -> listOf( // Kamis
+                MediaItem("otaku_sch_7", "Hanazakari no Kimitachi e S2", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/158475.jpg", "https://otakudesu.blog/anime/hanazakari-kimitachi-s2-sub-indo/", "https://otakudesu.blog/anime/hanazakari-kimitachi-s2-sub-indo/", "Kamis • Ep 11"),
+                MediaItem("otaku_sch_8", "Katainaka Ossan Kensei", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/06/158709.jpg", "https://otakudesu.blog/anime/katainaka-ossan-sub-indo/", "https://otakudesu.blog/anime/katainaka-ossan-sub-indo/", "Kamis • Ep 9")
+            )
+            4 -> listOf( // Jumat
+                MediaItem("otaku_sch_9", "Dr. Stone Science Future Part 3", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/Gaikotsu-Kishi-sama-Tadaima-Isekai-e-Odekakechuu-Season-2-Sub-Indo.jpg", "https://otakudesu.blog/anime/ds-future-part3-sub-indo/", "https://otakudesu.blog/anime/ds-future-part3-sub-indo/", "Jumat • Ep 6"),
+                MediaItem("otaku_sch_10", "Blue Lock Season 2", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/04/Kuroneko-to-Majo-no-Kyoushitsu.jpg", "https://otakudesu.blog/anime/blue-lock-s2-sub-indo/", "https://otakudesu.blog/anime/blue-lock-s2-sub-indo/", "Jumat • Ep 14")
+            )
+            5 -> listOf( // Sabtu
+                MediaItem("otaku_sch_11", "World Is Dancing", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/06/158709.jpg", "https://otakudesu.blog/anime/world-is-dancing-sub-indo/", "https://otakudesu.blog/anime/world-is-dancing-sub-indo/", "Sabtu • Ep 12"),
+                MediaItem("otaku_sch_12", "Gaikotsu Kishi-sama Season 2", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/Gaikotsu-Kishi-sama-Tadaima-Isekai-e-Odekakechuu-Season-2-Sub-Indo.jpg", "https://otakudesu.blog/anime/gaikotsu-kishi-s2-sub-indo/", "https://otakudesu.blog/anime/gaikotsu-kishi-s2-sub-indo/", "Sabtu • Ep 12")
+            )
+            else -> listOf( // Minggu
+                MediaItem("otaku_sch_13", "One Piece", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2021/05/One-Piece-Sub-Indo.jpg", "https://otakudesu.blog/anime/1piece-sub-indo/", "https://otakudesu.blog/anime/1piece-sub-indo/", "Minggu • Ep 1179"),
+                MediaItem("otaku_sch_14", "Mushoku Tensei Season 3", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/158340.jpg", "https://otakudesu.blog/anime/mushoku-ni-tensei-s3-sub-indo/", "https://otakudesu.blog/anime/mushoku-ni-tensei-s3-sub-indo/", "Minggu • Ep 13"),
+                MediaItem("otaku_sch_15", "Sekai Saikyou no Kouei", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/Sekai-Saikyou-no-Kouei-Sub.jpg", "https://otakudesu.blog/anime/sekai-saikyou-kouei-sub-indo/", "https://otakudesu.blog/anime/sekai-saikyou-kouei-sub-indo/", "Minggu • Ep 12")
+            )
+        }
+    }
+
     suspend fun getStream(urlInput: String): StreamResult? = withContext(Dispatchers.IO) {
         val targetUrl = if (urlInput.startsWith("http")) urlInput else "$BASE_URL/episode/$urlInput/"
         val html = fetchHtml(targetUrl) ?: return@withContext null
@@ -214,6 +268,7 @@ object OtakudesuScraper {
 
         val title = doc.selectFirst("h1.posttl, h1")?.text()?.trim() ?: "Anime Episode"
         val servers = mutableListOf<StreamServerItem>()
+        var directMp4: String? = null
 
         // 1. Direct iframes on the episode page
         doc.select("#pembed iframe, .responsive-embed-stream iframe, iframe").forEach { iframe ->
@@ -227,10 +282,12 @@ object OtakudesuScraper {
                             val directMatch = Regex("""videoURL\s*=\s*["']([^"']+)["']""").find(desuHtml)
                             val directUrl = directMatch?.groupValues?.get(1)
                             if (!directUrl.isNullOrBlank() && directUrl.startsWith("http")) {
+                                directMp4 = directUrl
                                 servers.add(
                                     StreamServerItem(
                                         name = "Otaku Server (720p Direct)",
-                                        url = directUrl
+                                        url = directUrl,
+                                        isDirectHls = true
                                     )
                                 )
                             }
@@ -247,7 +304,7 @@ object OtakudesuScraper {
                     src.contains("ok.ru") -> "OK.ru Player"
                     else -> "Server ${servers.size + 1}"
                 }
-                servers.add(StreamServerItem(name = name, url = src))
+                servers.add(StreamServerItem(name = name, url = src, isDirectHls = false))
             }
         }
 
@@ -256,18 +313,29 @@ object OtakudesuScraper {
             val href = a.attr("href")
             val quality = a.parent()?.selectFirst("strong")?.text()?.trim() ?: "HD"
             val host = a.text().trim()
-            if (href.startsWith("http") && (href.contains("mp4") || href.contains("stream") || href.contains("pixeldrain") || href.contains("gofile"))) {
-                servers.add(StreamServerItem(name = "$host ($quality)", url = href))
+            if (href.startsWith("http") && (href.contains(".mp4") || href.contains("stream") || href.contains("pixeldrain") || href.contains("gofile"))) {
+                val isMp4 = href.contains(".mp4")
+                if (isMp4 && directMp4 == null) {
+                    directMp4 = href
+                }
+                servers.add(StreamServerItem(name = "$host ($quality)", url = href, isDirectHls = isMp4))
             }
         }
 
         if (servers.isEmpty()) {
-            servers.add(StreamServerItem(name = "Otakudesu Web Player", url = targetUrl))
+            servers.add(StreamServerItem(name = "Otakudesu Web Player", url = targetUrl, isDirectHls = false))
         }
+
+        // Put direct MP4 server first
+        val sortedServers = servers.sortedWith(
+            compareBy<StreamServerItem> { if (it.isDirectHls) 0 else 1 }
+        )
 
         StreamResult(
             title = title,
-            servers = servers
+            directHlsUrl = directMp4,
+            iframePlayerUrl = sortedServers.firstOrNull { !it.isDirectHls }?.url,
+            servers = sortedServers
         )
     }
 }

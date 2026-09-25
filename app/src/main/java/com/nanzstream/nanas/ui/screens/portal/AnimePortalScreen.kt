@@ -149,7 +149,7 @@ fun AnimePortalScreen(
                             letterSpacing = 0.5.sp
                         )
                         Text(
-                            text = "Samehadaku • Simulcast & Sub Indo",
+                            text = "Otakudesu • Direct MP4 & Sub Indo",
                             color = TextDim,
                             fontSize = 10.sp
                         )
@@ -336,7 +336,7 @@ fun AnimePortalScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Cari judul anime di Samehadaku & Otakudesu...", color = TextDim, fontSize = 13.sp) },
+                            placeholder = { Text("Cari judul anime di Otakudesu...", color = TextDim, fontSize = 13.sp) },
                             singleLine = true,
                             leadingIcon = {
                                 Icon(Icons.Default.Search, contentDescription = null, tint = TextDim)

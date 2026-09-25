@@ -1,6 +1,11 @@
 package com.nanzstream.nanas.ui.screens
 
+import android.app.PictureInPictureParams
+import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Bitmap
+import android.os.Build
+import android.util.Rational
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -8,6 +13,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.ComponentActivity
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -37,6 +44,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -46,13 +56,31 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
+import com.nanzstream.nanas.LocalIsInPipMode
 import com.nanzstream.nanas.NanzStreamApp
+import com.nanzstream.nanas.PlaybackController
 import com.nanzstream.nanas.data.model.CategoryType
 import com.nanzstream.nanas.data.model.ContinueWatchingItem
 import com.nanzstream.nanas.data.model.StreamResult
 import com.nanzstream.nanas.data.model.StreamServerItem
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.ui.theme.*
+
+private fun Context.findActivity(): ComponentActivity? = when (this) {
+    is ComponentActivity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
+private fun enterPipMode(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val activity = context.findActivity() ?: return
+        val params = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .build()
+        activity.enterPictureInPictureMode(params)
+    }
+}
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -66,6 +94,10 @@ fun VideoPlayerScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
+    val isInPipMode = LocalIsInPipMode.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     var currentEpisode by remember { mutableIntStateOf(initialEpisode) }
     var streamResult by remember { mutableStateOf<StreamResult?>(null) }
     var selectedServer by remember { mutableStateOf<StreamServerItem?>(null) }
@@ -75,12 +107,13 @@ fun VideoPlayerScreen(
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
 
     val exoPlayer = remember {
+        val defaultReferer = if (category == CategoryType.ANIME) "https://desustream.net/" else "https://anichin.ro/"
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
             .setDefaultRequestProperties(
                 mapOf(
-                    "Referer" to "https://samehadaku.li/",
-                    "Origin" to "https://samehadaku.li"
+                    "Referer" to defaultReferer,
+                    "Origin" to defaultReferer.trimEnd('/')
                 )
             )
 
@@ -92,6 +125,51 @@ fun VideoPlayerScreen(
             .build().apply {
                 playWhenReady = true
             }
+    }
+
+    // Stop background audio playback when app is paused/stopped (except in PiP mode)
+    DisposableEffect(lifecycleOwner) {
+        PlaybackController.stopAllPlayback = {
+            exoPlayer.pause()
+        }
+
+        val observer = LifecycleEventObserver { _, event ->
+            val inPip = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                activity?.isInPictureInPictureMode == true
+            } else false
+
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    if (!inPip) {
+                        exoPlayer.pause()
+                    }
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    if (!inPip) {
+                        exoPlayer.pause()
+                    }
+                }
+                Lifecycle.Event.ON_DESTROY -> {
+                    exoPlayer.pause()
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            PlaybackController.stopAllPlayback = null
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // When exiting PiP mode while activity is not in resumed state (e.g. dismissed with X), immediately pause
+    LaunchedEffect(isInPipMode) {
+        if (!isInPipMode) {
+            val isResumed = activity?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true
+            if (!isResumed) {
+                exoPlayer.pause()
+            }
+        }
     }
 
     DisposableEffect(Unit) {
@@ -138,7 +216,7 @@ fun VideoPlayerScreen(
                 )
             )
 
-            // Setup ExoPlayer if direct HLS / MPD available
+            // Setup ExoPlayer if direct HLS / MPD / MP4 available
             val activeDirectHls = if (firstServer?.isDirectHls == true) firstServer.url else res?.directHlsUrl
             if (!activeDirectHls.isNullOrEmpty() && (firstServer == null || firstServer.isDirectHls)) {
                 val mediaItemBuilder = MediaItem.Builder().setUri(activeDirectHls)
@@ -146,6 +224,8 @@ fun VideoPlayerScreen(
                     mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
                 } else if (activeDirectHls.contains(".m3u8")) {
                     mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+                } else if (activeDirectHls.contains(".mp4")) {
+                    mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MP4)
                 }
                 exoPlayer.setMediaItem(mediaItemBuilder.build())
                 exoPlayer.prepare()
@@ -170,6 +250,8 @@ fun VideoPlayerScreen(
                 mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
             } else if (s.url.contains(".m3u8")) {
                 mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+            } else if (s.url.contains(".mp4")) {
+                mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MP4)
             }
             exoPlayer.setMediaItem(mediaItemBuilder.build())
             exoPlayer.prepare()
@@ -179,50 +261,101 @@ fun VideoPlayerScreen(
         }
     }
 
+    // 0. Dedicated PiP Viewport (Pure video filling floating window)
+    if (isInPipMode) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = false
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        return
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(DarkBg)
     ) {
-        // 1. Top Header with ENLARGED Back button & Title
+        // 1. Top Header with Back button, Title & PiP Button
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .border(1.5.dp, GlassBorder, CircleShape)
+                        .background(SurfaceElevated)
+                        .clickable(onClick = onBackClick),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Kembali",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column {
+                    Text(
+                        text = title,
+                        color = TextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "${category.displayName} • Episode $currentEpisode",
+                        color = TextMuted,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // PiP Button
             Box(
                 modifier = Modifier
                     .size(46.dp)
                     .clip(CircleShape)
                     .border(1.5.dp, GlassBorder, CircleShape)
                     .background(SurfaceElevated)
-                    .clickable(onClick = onBackClick),
+                    .clickable { enterPipMode(context) },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Kembali",
+                    imageVector = Icons.Default.PictureInPictureAlt,
+                    contentDescription = "Picture in Picture",
                     tint = Color.White,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column {
-                Text(
-                    text = title,
-                    color = TextPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1
-                )
-                Text(
-                    text = "${category.displayName} • Episode $currentEpisode",
-                    color = TextMuted,
-                    fontSize = 13.sp
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
@@ -407,12 +540,12 @@ fun VideoPlayerScreen(
                                             .clip(RoundedCornerShape(10.dp))
                                             .border(1.dp, GlassBorder, RoundedCornerShape(10.dp))
                                             .background(SurfaceElevated)
-                                            .clickable {
-                                                webViewError = false
-                                                webViewErrorMessage = null
-                                                webViewInstance?.loadUrl(iframeUrl)
-                                            }
-                                            .padding(horizontal = 16.dp),
+                                        .clickable {
+                                            webViewError = false
+                                            webViewErrorMessage = null
+                                            webViewInstance?.loadUrl(iframeUrl)
+                                        }
+                                        .padding(horizontal = 16.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
