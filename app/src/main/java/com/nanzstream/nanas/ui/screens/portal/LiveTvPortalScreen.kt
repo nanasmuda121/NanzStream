@@ -64,6 +64,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
@@ -182,7 +183,15 @@ private val VERIFIED_CHANNELS = listOf(
     ),
     VerifiedChannel("transtv", "Trans TV HD", "https://green-night-d2b4.iontv.workers.dev/transtv.m3u8", null, "Nasional", R.drawable.ch_transtv, 7),
     VerifiedChannel("trans7", "Trans7 HD", "https://green-night-d2b4.iontv.workers.dev/trans7.m3u8", null, "Nasional", R.drawable.ch_trans7, 8),
-    VerifiedChannel("antv", "ANTV HD", "https://op-flashcon-digdayahd-1.dens.tv/h/h235/01.m3u8", null, "Nasional", R.drawable.ch_antv, 9),
+    VerifiedChannel(
+        id = "antv",
+        name = "ANTV HD",
+        streamUrl = "https://dusk.biz.id/vinteo-lokal/prodeo.m3u8?id=782&type=hls",
+        backupUrl = "https://flv.intechmedia.net/live/ch107.m3u8",
+        genre = "Nasional",
+        logoRes = R.drawable.ch_antv,
+        number = 9
+    ),
     VerifiedChannel("kompastv", "Kompas TV HD", "https://op-flashcon-digdayahd-1.dens.tv/s/s104/index.m3u8", null, "Nasional", R.drawable.ch_kompastv, 10),
     VerifiedChannel("rtv", "RTV HD", "https://rtvstream.rtv.co.id:4555/hls/rtv.m3u8", null, "Nasional", R.drawable.ch_rtv, 11),
     VerifiedChannel("metrotv", "Metro TV HD", "https://edge.medcom.id/live-edge/smil:metro.smil/playlist.m3u8", null, "Nasional", R.drawable.ch_metrotv, 12),
@@ -212,24 +221,28 @@ private val VERIFIED_CHANNELS = listOf(
     // === HIBURAN & OLAHRAGA ===
     VerifiedChannel("bein_sports", "beIN Sports XTRA", "https://bein-xtra-bein.amagi.tv/playlist.m3u8", null, "Hiburan", R.drawable.ch_sports, 33),
     VerifiedChannel("fox_sports", "FOX Sports HD", "https://d1jzu95oc8fgt3.cloudfront.net/FOX_Sports.m3u8", null, "Hiburan", R.drawable.ch_sports, 34),
-    VerifiedChannel("cbs_sports", "CBS Sports HQ", "https://stitcher-ipv4.pluto.tv/v1/stitch/embed/hls/channel/5d8a98f1f7d451cb5fa0b463/master.m3u8", null, "Hiburan", R.drawable.ch_sports, 35),
-    VerifiedChannel("redbull_tv", "Red Bull TV HD", "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8", null, "Hiburan", R.drawable.ch_sports, 36),
-    VerifiedChannel("bbc_earth", "BBC Earth HD", "https://amg00793-amg00793c6-xumo-us-2669.playouts.now.amagi.tv/BBCStudios-BBCEarthA-hls/playlist.m3u8", null, "Hiburan", R.drawable.ch_bbcearth, 37),
-    VerifiedChannel("kdrama_plus", "K-Drama+ 24/7", "https://stream-us-east-1.getpublica.com/playlist.m3u8?network_id=425", null, "Hiburan", R.drawable.ch_kmovies, 38),
-    VerifiedChannel("kmovies", "NEW KMOVIES HD", "https://stream-us-east-1.getpublica.com/playlist.m3u8?network_id=7737", null, "Hiburan", R.drawable.ch_kmovies, 39),
-    VerifiedChannel("action_movies", "Movies Action HD", "https://shd-amg-fast.edgenextcdn.net/tx011/playlist.m3u8", null, "Hiburan", R.drawable.ch_action, 40),
-    VerifiedChannel("thriller_movies", "Movies Thriller HD", "https://shd-amg-fast.edgenextcdn.net/tx012/playlist.m3u8", null, "Hiburan", R.drawable.ch_action, 41),
-    VerifiedChannel("anime_retro", "Anime Retro Channel", "https://2-fss-2.streamhoster.com/pl_138/205510-3094608-1/playlist.m3u8", null, "Hiburan", R.drawable.ch_animax, 42),
+    VerifiedChannel("redbull_tv", "Red Bull TV HD", "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8", null, "Hiburan", R.drawable.ch_sports, 35),
+    VerifiedChannel("bbc_earth", "BBC Earth HD", "https://amg00793-amg00793c6-xumo-us-2669.playouts.now.amagi.tv/BBCStudios-BBCEarthA-hls/playlist.m3u8", null, "Hiburan", R.drawable.ch_bbcearth, 36),
+    VerifiedChannel("kdrama_plus", "K-Drama+ 24/7", "https://stream-us-east-1.getpublica.com/playlist.m3u8?network_id=425", null, "Hiburan", R.drawable.ch_kmovies, 37),
+    VerifiedChannel("kmovies", "NEW KMOVIES HD", "https://stream-us-east-1.getpublica.com/playlist.m3u8?network_id=7737", null, "Hiburan", R.drawable.ch_kmovies, 38),
+    VerifiedChannel("action_movies", "Movies Action HD", "https://shd-amg-fast.edgenextcdn.net/tx011/playlist.m3u8", null, "Hiburan", R.drawable.ch_action, 39),
+    VerifiedChannel("thriller_movies", "Movies Thriller HD", "https://shd-amg-fast.edgenextcdn.net/tx012/playlist.m3u8", null, "Hiburan", R.drawable.ch_action, 40),
+    VerifiedChannel("anime_retro", "Anime Retro Channel", "https://2-fss-2.streamhoster.com/pl_138/205510-3094608-1/playlist.m3u8", null, "Hiburan", R.drawable.ch_animax, 41),
 
     // === KIDS ===
-    VerifiedChannel("disney_channel", "Disney Channel HD", "http://15.204.246.24:8080/DisneyHD/index.m3u8", null, "Kids", R.drawable.ch_cartoon, 43),
-    VerifiedChannel("disney_junior", "Disney Junior HD", "http://190.93.224.42/DISNEY-JR/index.m3u8", null, "Kids", R.drawable.ch_kids, 44),
+    VerifiedChannel("cartoon_network", "Cartoon Network HD", "https://shls-cartoon-net-prod-dub.shahid.net/out/v1/dc4aa87372374325a66be458f29eab0f/index.m3u8", null, "Kids", R.drawable.ch_cartoon, 42),
+    VerifiedChannel("baby_shark", "Baby Shark TV HD", "https://newidco-babysharktv-1-us.roku.wurl.tv/playlist.m3u8", null, "Kids", R.drawable.ch_kids, 43),
+    VerifiedChannel("moonbug_kids", "Moonbug Kids HD", "https://moonbug-rokuus.amagi.tv/playlist.m3u8", null, "Kids", R.drawable.ch_kids, 44),
+    VerifiedChannel("toon_goggles", "Toon Goggles Kids", "https://amg01329-otterainc-toongoggles-samsungau-ad-4c.amagi.tv/playlist/amg01329-otterainc-toongoggles-samsungau/playlist.m3u8", null, "Kids", R.drawable.ch_cartoon, 45),
+    VerifiedChannel("mojitv_cartoon", "MojiTV Cartoon", "https://odmedia-mojitv-1-be.samsung.wurl.tv/playlist.m3u8", null, "Kids", R.drawable.ch_kids, 46),
+    VerifiedChannel("kidsflix", "KidsFlix 24/7", "https://stream-us-east-1.getpublica.com/playlist.m3u8?network_id=50", null, "Kids", R.drawable.ch_cartoon, 47),
+    VerifiedChannel("vtv_digital", "VTV Digital (ANTV/VIVA)", "https://flv.intechmedia.net/live/ch107.m3u8", null, "Kids", R.drawable.ch_antv, 48),
 
     // === RELIGI ===
-    VerifiedChannel("ahsan_tv", "Ahsan TV", "https://5bf7b725107e5.streamlock.net/ahsantv/ahsantv/playlist.m3u8", null, "Religi", R.drawable.ch_religi, 45),
-    VerifiedChannel("alwafa_tv", "Alwafa Tarim TV", "https://ammedia.siar.us/ammedia/live/playlist.m3u8", null, "Religi", R.drawable.ch_religi, 46),
-    VerifiedChannel("tawaf_tv", "Tawaf TV", "https://tvstreamcast.com/tawaftv.m3u8", null, "Religi", R.drawable.ch_tawaf, 47),
-    VerifiedChannel("salam_tv", "Salam TV", "https://live.salamtelevisi.com/hls/0/stream.m3u8", null, "Religi", R.drawable.ch_religi, 48)
+    VerifiedChannel("ahsan_tv", "Ahsan TV", "https://5bf7b725107e5.streamlock.net/ahsantv/ahsantv/playlist.m3u8", null, "Religi", R.drawable.ch_religi, 49),
+    VerifiedChannel("alwafa_tv", "Alwafa Tarim TV", "https://ammedia.siar.us/ammedia/live/playlist.m3u8", null, "Religi", R.drawable.ch_religi, 50),
+    VerifiedChannel("tawaf_tv", "Tawaf TV", "https://tvstreamcast.com/tawaftv.m3u8", null, "Religi", R.drawable.ch_tawaf, 51),
+    VerifiedChannel("salam_tv", "Salam TV", "https://live.salamtelevisi.com/hls/0/stream.m3u8", null, "Religi", R.drawable.ch_religi, 52)
 )
 
 @OptIn(UnstableApi::class)
@@ -273,8 +286,19 @@ fun LiveTvPortalScreen(
         val mediaSourceFactory = DefaultMediaSourceFactory(context, extractorsFactory)
             .setDataSourceFactory(httpDataSourceFactory)
 
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 15_000,
+                /* maxBufferMs = */ 50_000,
+                /* bufferForPlaybackMs = */ 2_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 3_000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(loadControl)
             .build().apply {
                 playWhenReady = true
             }
@@ -295,6 +319,9 @@ fun LiveTvPortalScreen(
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     if (!inPip && !exoPlayer.isPlaying) {
+                        if (exoPlayer.isCurrentMediaItemLive) {
+                            exoPlayer.seekToDefaultPosition()
+                        }
                         exoPlayer.play()
                     }
                 }
@@ -315,6 +342,24 @@ fun LiveTvPortalScreen(
         }
     }
 
+    // Watchdog to auto-recover when live stream gets stuck buffering > 10 seconds
+    LaunchedEffect(isStreamLoading) {
+        if (isStreamLoading) {
+            delay(10000L)
+            if (isStreamLoading && exoPlayer.playbackState == Player.STATE_BUFFERING) {
+                try {
+                    if (exoPlayer.isCurrentMediaItemLive) {
+                        exoPlayer.seekToDefaultPosition()
+                    }
+                    exoPlayer.prepare()
+                    exoPlayer.play()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
     // Handle back button when in fullscreen mode
     BackHandler(enabled = isFullscreen) {
         isFullscreen = false
@@ -330,6 +375,15 @@ fun LiveTvPortalScreen(
 
             override fun onPlayerError(error: PlaybackException) {
                 error.printStackTrace()
+
+                // If playback fell behind sliding live window, jump back to current live edge and resume
+                if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                    exoPlayer.seekToDefaultPosition()
+                    exoPlayer.prepare()
+                    exoPlayer.play()
+                    return
+                }
+
                 isStreamLoading = false
 
                 // Automatic failover to backup URL if Server 1 encountered an issue
@@ -373,6 +427,13 @@ fun LiveTvPortalScreen(
         try {
             val targetUrl = if (useBackupServer && !ch.backupUrl.isNullOrBlank()) ch.backupUrl else ch.streamUrl
             val mediaItemBuilder = MediaItem.Builder().setUri(targetUrl)
+
+            // Configure live stream auto-catch-up
+            val liveConfig = MediaItem.LiveConfiguration.Builder()
+                .setMaxPlaybackSpeed(1.02f)
+                .setMinPlaybackSpeed(0.98f)
+                .build()
+            mediaItemBuilder.setLiveConfiguration(liveConfig)
 
             when {
                 targetUrl.contains(".mpd") -> {
@@ -672,6 +733,9 @@ fun LiveTvPortalScreen(
                         if (exoPlayer.isPlaying) {
                             exoPlayer.pause()
                         } else {
+                            if (exoPlayer.isCurrentMediaItemLive) {
+                                exoPlayer.seekToDefaultPosition()
+                            }
                             exoPlayer.play()
                         }
                         controlsTrigger++
