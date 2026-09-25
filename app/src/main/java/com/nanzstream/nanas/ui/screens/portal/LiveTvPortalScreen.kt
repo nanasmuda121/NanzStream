@@ -68,6 +68,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.nanzstream.nanas.LocalIsInPipMode
@@ -132,7 +133,7 @@ private val VERIFIED_CHANNELS = listOf(
         id = "gtv",
         name = "GTV HD",
         streamUrl = "http://hometv.biz.id:80/play/-3G1b2ud-O59f7x_ScusEw",
-        backupUrl = "http://hometv.biz.id:80/play/KrVYNUtc63yvQKQCwg8miHqQ4_EdcTLriwuH5Hq6Ngh6Cq6OmchTWJed4cF8PLO8",
+        backupUrl = null,
         genre = "Nasional",
         logoRes = R.drawable.ch_gtv,
         number = 1
@@ -141,7 +142,7 @@ private val VERIFIED_CHANNELS = listOf(
         id = "mnctv",
         name = "MNC TV HD",
         streamUrl = "http://hometv.biz.id:80/play/1fxSpuJb44YPc2Gs5H_nOw",
-        backupUrl = "http://hometv.biz.id:80/play/KrVYNUtc63yvQKQCwg8miHqQ4_EdcTLriwuH5Hq6NgicGCOcnuwUnXooTDu7lj6R",
+        backupUrl = null,
         genre = "Nasional",
         logoRes = R.drawable.ch_mnctv,
         number = 2
@@ -150,7 +151,7 @@ private val VERIFIED_CHANNELS = listOf(
         id = "rcti",
         name = "RCTI HD",
         streamUrl = "http://hometv.biz.id:80/play/FgEpb2OcjoJ1Zpi78OicBw",
-        backupUrl = "http://hometv.biz.id:80/play/KrVYNUtc63yvQKQCwg8miHqQ4_EdcTLriwuH5Hq6Ngj0fHpRbhNUS-OX-_Lp8lZi",
+        backupUrl = null,
         genre = "Nasional",
         logoRes = R.drawable.ch_rcti,
         number = 3
@@ -159,7 +160,7 @@ private val VERIFIED_CHANNELS = listOf(
         id = "sctv",
         name = "SCTV HD",
         streamUrl = "http://hometv.biz.id:80/play/ncQ61p33CjA2O64BU5S1Yw",
-        backupUrl = "http://filex.me:8080/akkvdGtMUWkvVnMvaWx3V2hXa2NacE9Ra0g0dTlhc29keDE1OHU4Vm0zV3MvcU5CUjJCSWZTR1FJRnF2VXEyQQ",
+        backupUrl = null,
         genre = "Nasional",
         logoRes = R.drawable.ch_sctv,
         number = 4
@@ -231,7 +232,7 @@ private val VERIFIED_CHANNELS = listOf(
     VerifiedChannel("anime_retro", "Anime Retro Channel", "https://2-fss-2.streamhoster.com/pl_138/205510-3094608-1/playlist.m3u8", null, "Hiburan", R.drawable.ch_animax, 41),
 
     // === KIDS ===
-    VerifiedChannel("cartoon_network", "Cartoon Network HD", "https://shls-cartoon-net-prod-dub.shahid.net/out/v1/dc4aa87372374325a66be458f29eab0f/index.m3u8", null, "Kids", R.drawable.ch_cartoon, 42),
+    VerifiedChannel("cartoon_network", "Cartoon Network HD", "http://api.toonamiaftermath.com:3000/est/playlist.m3u8", null, "Kids", R.drawable.ch_cartoon, 42),
     VerifiedChannel("baby_shark", "Baby Shark TV HD", "https://newidco-babysharktv-1-us.roku.wurl.tv/playlist.m3u8", null, "Kids", R.drawable.ch_kids, 43),
     VerifiedChannel("moonbug_kids", "Moonbug Kids HD", "https://moonbug-rokuus.amagi.tv/playlist.m3u8", null, "Kids", R.drawable.ch_kids, 44),
     VerifiedChannel("toon_goggles", "Toon Goggles Kids", "https://amg01329-otterainc-toongoggles-samsungau-ad-4c.amagi.tv/playlist/amg01329-otterainc-toongoggles-samsungau/playlist.m3u8", null, "Kids", R.drawable.ch_cartoon, 45),
@@ -282,17 +283,22 @@ fun LiveTvPortalScreen(
             .setReadTimeoutMs(20000)
 
         val extractorsFactory = DefaultExtractorsFactory()
-            .setConstantBitrateSeekingEnabled(true)
+            .setConstantBitrateSeekingEnabled(false)
+            .setTsExtractorFlags(
+                DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
+                DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS or
+                DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM
+            )
 
         val mediaSourceFactory = DefaultMediaSourceFactory(context, extractorsFactory)
             .setDataSourceFactory(httpDataSourceFactory)
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 15_000,
-                /* maxBufferMs = */ 50_000,
-                /* bufferForPlaybackMs = */ 2_000,
-                /* bufferForPlaybackAfterRebufferMs = */ 3_000
+                /* minBufferMs = */ 5_000,
+                /* maxBufferMs = */ 20_000,
+                /* bufferForPlaybackMs = */ 1_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_000
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -342,7 +348,8 @@ fun LiveTvPortalScreen(
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     if (!inPip && !exoPlayer.isPlaying) {
-                        if (exoPlayer.isCurrentMediaItemLive) {
+                        val isHlsOrDash = selectedChannel?.streamUrl?.contains(".m3u8") == true || selectedChannel?.streamUrl?.contains(".mpd") == true
+                        if (isHlsOrDash && exoPlayer.isCurrentMediaItemLive) {
                             exoPlayer.seekToDefaultPosition()
                         }
                         exoPlayer.play()
@@ -375,8 +382,9 @@ fun LiveTvPortalScreen(
             delay(10000L)
             if (isStreamLoading && exoPlayer.playbackState == Player.STATE_BUFFERING) {
                 try {
-                    if (exoPlayer.isCurrentMediaItemLive) {
-                        exoPlayer.seekToDefaultPosition()
+                    val currentItem = exoPlayer.currentMediaItem
+                    if (currentItem != null) {
+                        exoPlayer.setMediaItem(currentItem, /* resetPosition = */ true)
                     }
                     exoPlayer.prepare()
                     exoPlayer.play()
@@ -432,11 +440,12 @@ fun LiveTvPortalScreen(
                         isStreamLoading = true
                     }
                     Player.STATE_ENDED -> {
-                        // Live TV stream reached segment discontinuity/socket drop - auto reconnect to live edge
+                        // Live TV stream reached segment discontinuity/socket drop - reconnect to live stream
                         isStreamLoading = true
                         try {
-                            if (exoPlayer.isCurrentMediaItemLive) {
-                                exoPlayer.seekToDefaultPosition()
+                            val currentItem = exoPlayer.currentMediaItem
+                            if (currentItem != null) {
+                                exoPlayer.setMediaItem(currentItem, /* resetPosition = */ true)
                             }
                             exoPlayer.prepare()
                             exoPlayer.play()
@@ -469,12 +478,7 @@ fun LiveTvPortalScreen(
             val targetUrl = if (useBackupServer && !ch.backupUrl.isNullOrBlank()) ch.backupUrl else ch.streamUrl
             val mediaItemBuilder = MediaItem.Builder().setUri(targetUrl)
 
-            // Configure live stream auto-catch-up
-            val liveConfig = MediaItem.LiveConfiguration.Builder()
-                .setMaxPlaybackSpeed(1.02f)
-                .setMinPlaybackSpeed(0.98f)
-                .build()
-            mediaItemBuilder.setLiveConfiguration(liveConfig)
+            // Play at standard 1.0x speed without dynamic speed adjustment to prevent live-edge buffer collisions, stuttering, and skipping across all channels
 
             when {
                 targetUrl.contains(".mpd") -> {
@@ -774,7 +778,8 @@ fun LiveTvPortalScreen(
                         if (exoPlayer.isPlaying) {
                             exoPlayer.pause()
                         } else {
-                            if (exoPlayer.isCurrentMediaItemLive) {
+                            val isHlsOrDash = selectedChannel?.streamUrl?.contains(".m3u8") == true || selectedChannel?.streamUrl?.contains(".mpd") == true
+                            if (isHlsOrDash && exoPlayer.isCurrentMediaItemLive) {
                                 exoPlayer.seekToDefaultPosition()
                             }
                             exoPlayer.play()

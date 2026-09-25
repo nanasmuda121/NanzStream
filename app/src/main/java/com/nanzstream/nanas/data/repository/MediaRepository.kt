@@ -217,8 +217,18 @@ class MediaRepository {
         withContext(Dispatchers.IO) {
             try {
                 when (category) {
-                    CategoryType.ANIME -> OtakudesuScraper.getStream(targetUrlOrSlug)
-                    CategoryType.DONGHUA -> DonghuaScraper.getStream(targetUrlOrSlug)
+                    CategoryType.ANIME -> {
+                        val epUrl = if (targetUrlOrSlug.contains("episode-", ignoreCase = true)) {
+                            targetUrlOrSlug.replace(Regex("""episode-\d+""", RegexOption.IGNORE_CASE), "episode-$episode")
+                        } else targetUrlOrSlug
+                        OtakudesuScraper.getStream(epUrl)
+                    }
+                    CategoryType.DONGHUA -> {
+                        val epUrl = if (targetUrlOrSlug.contains("episode-", ignoreCase = true)) {
+                            targetUrlOrSlug.replace(Regex("""episode-\d+""", RegexOption.IGNORE_CASE), "episode-$episode")
+                        } else targetUrlOrSlug
+                        DonghuaScraper.getStream(epUrl)
+                    }
                     CategoryType.LIVETV -> CubMuScraper.getLiveStream(targetUrlOrSlug)
                     CategoryType.VOD -> CubMuScraper.getVodStream(targetUrlOrSlug)
                     else -> null

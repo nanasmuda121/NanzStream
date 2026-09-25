@@ -208,21 +208,9 @@ fun VideoPlayerScreen(
                 )
             )
 
-            // Setup ExoPlayer if direct HLS / MPD / MP4 available
-            val activeDirectHls = if (firstServer?.isDirectHls == true) firstServer.url else res?.directHlsUrl
-            if (!activeDirectHls.isNullOrEmpty() && (firstServer == null || firstServer.isDirectHls)) {
-                val mediaItemBuilder = MediaItem.Builder().setUri(activeDirectHls)
-                if (activeDirectHls.contains(".mpd")) {
-                    mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
-                } else if (activeDirectHls.contains(".m3u8")) {
-                    mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
-                } else if (activeDirectHls.contains(".mp4")) {
-                    mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MP4)
-                }
-                exoPlayer.setMediaItem(mediaItemBuilder.build())
-                exoPlayer.prepare()
-                exoPlayer.play()
-            }
+            // Initial server setup
+            val firstServer = res?.servers?.firstOrNull()
+            selectedServer = firstServer
         } catch (e: Exception) {
             e.printStackTrace()
             isLoading = false
@@ -236,13 +224,20 @@ fun VideoPlayerScreen(
         webViewError = false
         webViewErrorMessage = null
         val s = selectedServer ?: return@LaunchedEffect
-        if (s.isDirectHls) {
+        val serverIsDirect = s.isDirectHls || s.url.contains(".mp4", ignoreCase = true) || s.url.contains(".m3u8", ignoreCase = true) || s.url.contains(".mpd", ignoreCase = true)
+        if (serverIsDirect) {
+            isLoading = true
+            webViewInstance?.stopLoading()
+            webViewInstance?.loadUrl("about:blank")
+            webViewInstance?.destroy()
+            webViewInstance = null
+
             val mediaItemBuilder = MediaItem.Builder().setUri(s.url)
-            if (s.url.contains(".mpd")) {
+            if (s.url.contains(".mpd", ignoreCase = true)) {
                 mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
-            } else if (s.url.contains(".m3u8")) {
+            } else if (s.url.contains(".m3u8", ignoreCase = true)) {
                 mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
-            } else if (s.url.contains(".mp4")) {
+            } else if (s.url.contains(".mp4", ignoreCase = true)) {
                 mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MP4)
             }
             exoPlayer.setMediaItem(mediaItemBuilder.build())
@@ -250,6 +245,7 @@ fun VideoPlayerScreen(
             exoPlayer.play()
         } else {
             exoPlayer.pause()
+            exoPlayer.clearMediaItems()
         }
     }
 
@@ -351,29 +347,38 @@ fun VideoPlayerScreen(
             } else {
                 val curServer = selectedServer
                 val isDirect = if (curServer != null) {
-                    curServer.isDirectHls
+                    curServer.isDirectHls || curServer.url.contains(".mp4", ignoreCase = true) || curServer.url.contains(".m3u8", ignoreCase = true) || curServer.url.contains(".mpd", ignoreCase = true)
                 } else {
                     !streamResult?.directHlsUrl.isNullOrEmpty()
                 }
-                val directHls = if (curServer?.isDirectHls == true) curServer.url else streamResult?.directHlsUrl
-                val iframeUrl = if (curServer != null && !curServer.isDirectHls) curServer.url else streamResult?.iframePlayerUrl
+                val directHls = if (curServer != null && isDirect) curServer.url else streamResult?.directHlsUrl
+                val iframeUrl = if (curServer != null && !isDirect) curServer.url else streamResult?.iframePlayerUrl
 
-                if (isDirect && !directHls.isNullOrEmpty()) {
-                    // ExoPlayer Native View
-                    AndroidView(
-                        factory = { ctx ->
-                            PlayerView(ctx).apply {
-                                player = exoPlayer
-                                useController = true
-                                layoutParams = ViewGroup.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT
-                                )
+                key(curServer?.name, curServer?.url) {
+                    if (isDirect && !directHls.isNullOrEmpty()) {
+                        // ExoPlayer Native View - ZERO WEBVIEW
+                        AndroidView(
+                            factory = { ctx ->
+                                PlayerView(ctx).apply {
+                                    player = exoPlayer
+                                    useController = true
+                                    layoutParams = ViewGroup.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else if (!iframeUrl.isNullOrEmpty()) {
+                        DisposableEffect(iframeUrl) {
+                            onDispose {
+                                webViewInstance?.stopLoading()
+                                webViewInstance?.loadUrl("about:blank")
+                                webViewInstance?.destroy()
+                                webViewInstance = null
                             }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else if (!iframeUrl.isNullOrEmpty()) {
+                        }
                     // Sandboxed WebView for Embed Player with error interceptor and retry
                     Box(modifier = Modifier.fillMaxSize()) {
                         AndroidView(
@@ -397,7 +402,14 @@ fun VideoPlayerScreen(
                                     webViewClient = object : WebViewClient() {
                                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                             val u = request?.url?.toString() ?: return false
-                                            if (!u.contains("player") && !u.contains("embed") && !u.contains("video") && !u.contains("stream") && !u.contains("blogger") && !u.contains("ok.ru") && !u.contains("dailymotion")) {
+                                            val scheme = request.url?.scheme?.lowercase() ?: ""
+                                            if (scheme != "http" && scheme != "https") {
+                                                return true
+                                            }
+                                            val lower = u.lowercase()
+                                            if (lower.contains("adsterra") || lower.contains("popads") || lower.contains("bet") ||
+                                                lower.contains("slot") || lower.contains("judi") || lower.contains("onclick") ||
+                                                (lower.contains("track") && lower.contains("click"))) {
                                                 return true
                                             }
                                             return false
@@ -416,8 +428,8 @@ fun VideoPlayerScreen(
                                             if (request?.isForMainFrame == true) {
                                                 val desc = error?.description?.toString() ?: ""
                                                 webViewError = true
-                                                webViewErrorMessage = if (desc.contains("REFUSED", ignoreCase = true) || desc.contains("ERR_CONNECTION", ignoreCase = true)) {
-                                                    "Server menolak koneksi (Offline / Gangguan)"
+                                                webViewErrorMessage = if (desc.contains("REFUSED", ignoreCase = true) || desc.contains("ERR_CONNECTION", ignoreCase = true) || desc.contains("NAME_NOT_RESOLVED", ignoreCase = true)) {
+                                                    "Server menolak koneksi (Offline / Diblokir ISP)"
                                                 } else {
                                                     desc.ifEmpty { "Gagal memuat pemutar video" }
                                                 }
@@ -429,7 +441,7 @@ fun VideoPlayerScreen(
                                             super.onReceivedError(view, errorCode, description, failingUrl)
                                             webViewError = true
                                             webViewErrorMessage = if (description?.contains("REFUSED", ignoreCase = true) == true) {
-                                                "Server menolak koneksi (Offline / Gangguan)"
+                                                "Server menolak koneksi (Offline / Diblokir ISP)"
                                             } else {
                                                 description ?: "Gagal memuat pemutar video"
                                             }
@@ -440,7 +452,7 @@ fun VideoPlayerScreen(
                             },
                             update = { webView ->
                                 webViewInstance = webView
-                                if (webView.url != iframeUrl && !webViewError) {
+                                if (webView.url != iframeUrl) {
                                     webView.loadUrl(iframeUrl)
                                 }
                             },
@@ -481,7 +493,7 @@ fun VideoPlayerScreen(
                                 Spacer(modifier = Modifier.height(14.dp))
 
                                 val allServers = streamResult?.servers ?: emptyList()
-                                val curIndex = allServers.indexOfFirst { it.url == selectedServer?.url }
+                                val curIndex = allServers.indexOfFirst { it.url == selectedServer?.url || it.name == selectedServer?.name }
                                 val nextIndex = if (curIndex >= 0 && allServers.size > 1) (curIndex + 1) % allServers.size else -1
 
                                 Row(
@@ -545,6 +557,7 @@ fun VideoPlayerScreen(
                     )
                 }
             }
+        }
 
             // Floating Controls for Fullscreen Toggle overlay
             if (isFullscreen) {
@@ -691,7 +704,7 @@ fun VideoPlayerScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         servers.forEach { s ->
-                            val isSelected = selectedServer?.name == s.name
+                            val isSelected = selectedServer?.url == s.url || selectedServer?.name == s.name
                             Box(
                                 modifier = Modifier
                                     .height(46.dp)
@@ -702,7 +715,13 @@ fun VideoPlayerScreen(
                                         RoundedCornerShape(12.dp)
                                     )
                                     .background(if (isSelected) Color.White else SurfaceElevated)
-                                    .clickable { selectedServer = s }
+                                    .clickable {
+                                        if (selectedServer?.url != s.url) {
+                                            webViewError = false
+                                            webViewErrorMessage = null
+                                            selectedServer = s
+                                        }
+                                    }
                                     .padding(horizontal = 20.dp),
                                 contentAlignment = Alignment.Center
                             ) {

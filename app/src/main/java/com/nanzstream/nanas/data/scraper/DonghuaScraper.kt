@@ -197,7 +197,7 @@ object DonghuaScraper {
         }
 
         // 2. Check server tabs and mirror options
-        doc.select(".server-item a, ul.mirror li a, .mirror option, select.mirror option, select option").forEachIndexed { i, el ->
+        doc.select("a[data-hash], .server-item a, ul.mirror li a, .mirror option, select.mirror option, select option, #servers-content a").forEachIndexed { i, el ->
             val serverName = el.text().trim().ifBlank { "Server ${i + 1}" }
             val dataHash = el.attr("data-hash").ifEmpty { el.attr("data-video") }.ifEmpty { el.attr("value") }.trim()
 
@@ -212,7 +212,25 @@ object DonghuaScraper {
                     val iframeUrl = match?.groupValues?.get(1)?.trim() ?: if (decoded.startsWith("http")) decoded.trim() else null
 
                     if (!iframeUrl.isNullOrEmpty() && !isBlockedOrDead(iframeUrl) && !servers.any { it.url == iframeUrl }) {
-                        servers.add(StreamServerItem(extractServerName(iframeUrl, serverName), iframeUrl, isDirectHls = false))
+                        // Check if it's TurboVIP and try to extract direct .m3u8
+                        var directHlsUrl: String? = null
+                        if (iframeUrl.contains("turbovidhls.com")) {
+                            try {
+                                val turboHtml = fetchHtml(iframeUrl)
+                                val m3u8Match = Regex("""(https?://[^\s"']+\.m3u8[^\s"']*)""").find(turboHtml ?: "")
+                                directHlsUrl = m3u8Match?.groupValues?.get(1)
+                            } catch (e: Exception) {
+                                // ignore
+                            }
+                        }
+
+                        if (!directHlsUrl.isNullOrBlank()) {
+                            if (!servers.any { it.url == directHlsUrl }) {
+                                servers.add(StreamServerItem("TurboVIP (Direct HLS)", directHlsUrl, isDirectHls = true))
+                            }
+                        } else {
+                            servers.add(StreamServerItem(extractServerName(iframeUrl, serverName), iframeUrl, isDirectHls = false))
+                        }
                     }
                 } catch (e: Exception) {
                     // Ignore
@@ -220,25 +238,27 @@ object DonghuaScraper {
             }
         }
 
-        // Prioritize reliable players first (OK.ru, Blogger, Dailymotion, Rumble)
+        // Prioritize reliable players first (Direct HLS first, then Dailymotion, Blogger, OK.ru, others)
         val sortedServers = servers.sortedWith(
             compareBy<StreamServerItem> { item ->
                 when {
-                    item.url.contains("ok.ru") -> 0
-                    item.url.contains("blogger.com") -> 1
-                    item.url.contains("dailymotion.com") -> 2
-                    item.url.contains("rumble.com") -> 3
-                    else -> 4
+                    item.isDirectHls -> 0
+                    item.url.contains("dailymotion.com") || item.name.contains("Dailymotion", ignoreCase = true) -> 1
+                    item.url.contains("blogger.com") -> 2
+                    item.url.contains("ok.ru") -> 3
+                    item.url.contains("rumble.com") -> 4
+                    else -> 5
                 }
             }
         )
 
-        val primaryUrl = sortedServers.firstOrNull()?.url
+        val directStream = sortedServers.firstOrNull { it.isDirectHls }?.url
+        val primaryEmbed = sortedServers.firstOrNull { !it.isDirectHls }?.url
 
         StreamResult(
             title = title,
-            directHlsUrl = null,
-            iframePlayerUrl = primaryUrl,
+            directHlsUrl = directStream,
+            iframePlayerUrl = primaryEmbed,
             servers = sortedServers
         )
     }
