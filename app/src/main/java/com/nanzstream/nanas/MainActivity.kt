@@ -162,7 +162,10 @@ class MainActivity : ComponentActivity() {
                                             category = detail.category.id,
                                             title = "${detail.title} - ${ep.title}",
                                             targetUrl = ep.url,
-                                            episode = ep.episodeNumber.toIntOrNull() ?: 1
+                                            episode = ep.episodeNumber.toIntOrNull()
+                                                ?: Regex("""\b(\d+)\b""").find(ep.title)?.groupValues?.get(1)?.toIntOrNull()
+                                                ?: Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(ep.url)?.groupValues?.get(1)?.toIntOrNull()
+                                                ?: 1
                                         )
                                     )
                                 },

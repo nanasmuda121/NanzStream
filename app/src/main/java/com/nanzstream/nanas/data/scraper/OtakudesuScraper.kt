@@ -284,7 +284,17 @@ object OtakudesuScraper {
     }
 
     suspend fun getStream(urlInput: String): StreamResult? = withContext(Dispatchers.IO) {
-        val targetUrl = if (urlInput.startsWith("http")) urlInput else "$BASE_URL/episode/$urlInput/"
+        var targetUrl = if (urlInput.startsWith("http")) urlInput else "$BASE_URL/episode/$urlInput/"
+
+        // If targetUrl is an anime series URL (e.g. /anime/), resolve the first episode from getDetail
+        if (targetUrl.contains("/anime/", ignoreCase = true) || !targetUrl.contains("/episode/", ignoreCase = true)) {
+            val detail = getDetail(targetUrl)
+            val firstEp = detail?.episodes?.firstOrNull()?.url
+            if (!firstEp.isNullOrBlank() && firstEp != targetUrl) {
+                targetUrl = firstEp
+            }
+        }
+
         val html = fetchHtml(targetUrl) ?: return@withContext null
         val doc = Jsoup.parse(html)
 
@@ -303,11 +313,11 @@ object OtakudesuScraper {
                             val directMatch = Regex("""videoURL\s*=\s*["']([^"']+)["']""").find(desuHtml)
                                 ?: Regex("""(https?://[^\s"']+\.mp4[^\s"']*)""").find(desuHtml)
                             val directUrl = directMatch?.groupValues?.get(1)
-                            if (!directUrl.isNullOrBlank() && directUrl.startsWith("http")) {
+                            if (!directUrl.isNullOrBlank() && directUrl.startsWith("http") && !directUrl.endsWith("/.mp4") && !directUrl.contains("/download/.mp4")) {
                                 directMp4 = directUrl
                                 servers.add(
                                     StreamServerItem(
-                                        name = "Otaku Server (720p Direct)",
+                                        name = "Otaku Server (720p Direct MP4)",
                                         url = directUrl,
                                         isDirectHls = true
                                     )
@@ -361,11 +371,11 @@ object OtakudesuScraper {
                                         if (mSrc.contains("desustream")) {
                                             val arcHtml = fetchHtml(mSrc, referer = "$BASE_URL/")
                                             val arcMp4 = Regex("""(https?://[^\s"']+\.mp4[^\s"']*)""").find(arcHtml ?: "")?.groupValues?.get(1)
-                                            if (!arcMp4.isNullOrBlank() && !servers.any { it.url == arcMp4 }) {
+                                            if (!arcMp4.isNullOrBlank() && arcMp4.startsWith("http") && !arcMp4.endsWith("/.mp4") && !arcMp4.contains("/download/.mp4") && arcMp4.length > 25 && !servers.any { it.url == arcMp4 }) {
                                                 if (directMp4 == null) directMp4 = arcMp4
                                                 servers.add(
                                                     StreamServerItem(
-                                                        name = "Otaku Archive ($q Direct)",
+                                                        name = "Otaku Archive ($q Direct MP4)",
                                                         url = arcMp4,
                                                         isDirectHls = true
                                                     )
@@ -401,7 +411,7 @@ object OtakudesuScraper {
             val quality = a.parent()?.selectFirst("strong")?.text()?.trim() ?: "HD"
             val host = a.text().trim()
             if (href.startsWith("http") && (href.contains(".mp4") || href.contains("stream") || href.contains("pixeldrain") || href.contains("gofile"))) {
-                val isMp4 = href.contains(".mp4")
+                val isMp4 = href.contains(".mp4") && !href.endsWith("/.mp4") && !href.contains("/download/.mp4")
                 if (isMp4 && directMp4 == null) {
                     directMp4 = href
                 }

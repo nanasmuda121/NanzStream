@@ -218,15 +218,43 @@ class MediaRepository {
             try {
                 when (category) {
                     CategoryType.ANIME -> {
-                        val epUrl = if (targetUrlOrSlug.contains("episode-", ignoreCase = true)) {
-                            targetUrlOrSlug.replace(Regex("""episode-\d+""", RegexOption.IGNORE_CASE), "episode-$episode")
-                        } else targetUrlOrSlug
+                        var epUrl = targetUrlOrSlug
+                        // If given a series page (e.g. /anime/ or does not contain /episode/), resolve episode URL from detail
+                        if (epUrl.contains("/anime/", ignoreCase = true) || !epUrl.contains("/episode/", ignoreCase = true)) {
+                            val detail = OtakudesuScraper.getDetail(epUrl)
+                            val foundEp = detail?.episodes?.find { it.episodeNumber.toIntOrNull() == episode }
+                                ?: detail?.episodes?.getOrNull(episode - 1)
+                                ?: detail?.episodes?.firstOrNull()
+                            if (foundEp != null && foundEp.url.isNotBlank()) {
+                                epUrl = foundEp.url
+                            }
+                        } else {
+                            // If user explicitly navigated to a different episode number (e.g. Next Ep / Prev Ep)
+                            val urlEpNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(epUrl)?.groupValues?.get(1)?.toIntOrNull()
+                            if (urlEpNum != null && urlEpNum != episode) {
+                                epUrl = epUrl.replace(Regex("""episode-\d+""", RegexOption.IGNORE_CASE), "episode-$episode")
+                            }
+                        }
                         OtakudesuScraper.getStream(epUrl)
                     }
                     CategoryType.DONGHUA -> {
-                        val epUrl = if (targetUrlOrSlug.contains("episode-", ignoreCase = true)) {
-                            targetUrlOrSlug.replace(Regex("""episode-\d+""", RegexOption.IGNORE_CASE), "episode-$episode")
-                        } else targetUrlOrSlug
+                        var epUrl = targetUrlOrSlug
+                        // If given a series page (e.g. /anime/ or does not contain episode), resolve episode URL from detail
+                        if (epUrl.contains("/anime/", ignoreCase = true) || !epUrl.contains("episode", ignoreCase = true)) {
+                            val detail = DonghuaScraper.getDetail(epUrl)
+                            val foundEp = detail?.episodes?.find { it.episodeNumber.toIntOrNull() == episode }
+                                ?: detail?.episodes?.getOrNull(episode - 1)
+                                ?: detail?.episodes?.firstOrNull()
+                            if (foundEp != null && foundEp.url.isNotBlank()) {
+                                epUrl = foundEp.url
+                            }
+                        } else {
+                            // If user explicitly navigated to a different episode number (e.g. Next Ep / Prev Ep)
+                            val urlEpNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(epUrl)?.groupValues?.get(1)?.toIntOrNull()
+                            if (urlEpNum != null && urlEpNum != episode) {
+                                epUrl = epUrl.replace(Regex("""episode-\d+""", RegexOption.IGNORE_CASE), "episode-$episode")
+                            }
+                        }
                         DonghuaScraper.getStream(epUrl)
                     }
                     CategoryType.LIVETV -> CubMuScraper.getLiveStream(targetUrlOrSlug)

@@ -226,7 +226,6 @@ fun VideoPlayerScreen(
             isLoading = true
             webViewInstance?.stopLoading()
             webViewInstance?.loadUrl("about:blank")
-            webViewInstance?.destroy()
             webViewInstance = null
 
             val mediaItemBuilder = MediaItem.Builder().setUri(s.url)
@@ -243,6 +242,11 @@ fun VideoPlayerScreen(
         } else {
             exoPlayer.pause()
             exoPlayer.clearMediaItems()
+            isLoading = true
+            webViewInstance?.apply {
+                stopLoading()
+                loadUrl(s.url)
+            }
         }
     }
 
@@ -339,219 +343,230 @@ fun VideoPlayerScreen(
             },
             contentAlignment = Alignment.Center
         ) {
-            if (isLoading) {
-                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
+            val curServer = selectedServer
+            val isDirect = if (curServer != null) {
+                curServer.isDirectHls || curServer.url.contains(".mp4", ignoreCase = true) || curServer.url.contains(".m3u8", ignoreCase = true) || curServer.url.contains(".mpd", ignoreCase = true)
             } else {
-                val curServer = selectedServer
-                val isDirect = if (curServer != null) {
-                    curServer.isDirectHls || curServer.url.contains(".mp4", ignoreCase = true) || curServer.url.contains(".m3u8", ignoreCase = true) || curServer.url.contains(".mpd", ignoreCase = true)
-                } else {
-                    !streamResult?.directHlsUrl.isNullOrEmpty()
-                }
-                val directHls = if (curServer != null && isDirect) curServer.url else streamResult?.directHlsUrl
-                val iframeUrl = if (curServer != null && !isDirect) curServer.url else streamResult?.iframePlayerUrl
+                !streamResult?.directHlsUrl.isNullOrEmpty()
+            }
+            val directHls = if (curServer != null && isDirect) curServer.url else streamResult?.directHlsUrl
+            val iframeUrl = if (curServer != null && !isDirect) curServer.url else streamResult?.iframePlayerUrl
 
-                key(curServer?.name, curServer?.url) {
-                    if (isDirect && !directHls.isNullOrEmpty()) {
-                        // ExoPlayer Native View - ZERO WEBVIEW
-                        AndroidView(
-                            factory = { ctx ->
-                                PlayerView(ctx).apply {
-                                    player = exoPlayer
-                                    useController = true
-                                    layoutParams = ViewGroup.LayoutParams(
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                        ViewGroup.LayoutParams.MATCH_PARENT
-                                    )
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else if (!iframeUrl.isNullOrEmpty()) {
-                        DisposableEffect(iframeUrl) {
-                            onDispose {
-                                webViewInstance?.stopLoading()
-                                webViewInstance?.loadUrl("about:blank")
-                                webViewInstance?.destroy()
-                                webViewInstance = null
-                            }
+            if (isDirect && !directHls.isNullOrEmpty()) {
+                // ExoPlayer Native View - ZERO WEBVIEW
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            player = exoPlayer
+                            useController = true
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
                         }
-                    // Sandboxed WebView for Embed Player with error interceptor and retry
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        AndroidView(
-                            factory = { ctx ->
-                                WebView(ctx).apply {
-                                    webViewInstance = this
-                                    layoutParams = ViewGroup.LayoutParams(
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                        ViewGroup.LayoutParams.MATCH_PARENT
-                                    )
-                                    settings.apply {
-                                        javaScriptEnabled = true
-                                        domStorageEnabled = true
-                                        mediaPlaybackRequiresUserGesture = false
-                                        loadWithOverviewMode = true
-                                        useWideViewPort = true
-                                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                                        userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+                    },
+                    update = { playerView ->
+                        if (playerView.player != exoPlayer) {
+                            playerView.player = exoPlayer
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else if (!iframeUrl.isNullOrEmpty()) {
+                // Sandboxed WebView for Embed Player with error interceptor and retry
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AndroidView(
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                webViewInstance = this
+                                layoutParams = ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                                settings.apply {
+                                    javaScriptEnabled = true
+                                    domStorageEnabled = true
+                                    mediaPlaybackRequiresUserGesture = false
+                                    loadWithOverviewMode = true
+                                    useWideViewPort = true
+                                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                    userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+                                }
+                                webChromeClient = WebChromeClient()
+                                webViewClient = object : WebViewClient() {
+                                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                        val u = request?.url?.toString() ?: return false
+                                        val scheme = request.url?.scheme?.lowercase() ?: ""
+                                        if (scheme != "http" && scheme != "https") {
+                                            return true
+                                        }
+                                        val lower = u.lowercase()
+                                        if (lower.contains("adsterra") || lower.contains("popads") || lower.contains("bet") ||
+                                            lower.contains("slot") || lower.contains("judi") || lower.contains("onclick") ||
+                                            (lower.contains("track") && lower.contains("click"))) {
+                                            return true
+                                        }
+                                        return false
                                     }
-                                    webChromeClient = WebChromeClient()
-                                    webViewClient = object : WebViewClient() {
-                                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                            val u = request?.url?.toString() ?: return false
-                                            val scheme = request.url?.scheme?.lowercase() ?: ""
-                                            if (scheme != "http" && scheme != "https") {
-                                                return true
-                                            }
-                                            val lower = u.lowercase()
-                                            if (lower.contains("adsterra") || lower.contains("popads") || lower.contains("bet") ||
-                                                lower.contains("slot") || lower.contains("judi") || lower.contains("onclick") ||
-                                                (lower.contains("track") && lower.contains("click"))) {
-                                                return true
-                                            }
-                                            return false
-                                        }
 
-                                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                                            super.onPageStarted(view, url, favicon)
-                                            if (url == iframeUrl) {
-                                                webViewError = false
-                                                webViewErrorMessage = null
-                                            }
-                                        }
+                                    override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                        super.onPageStarted(view, url, favicon)
+                                        webViewError = false
+                                        webViewErrorMessage = null
+                                        isLoading = false
+                                    }
 
-                                        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                                            super.onReceivedError(view, request, error)
-                                            if (request?.isForMainFrame == true) {
-                                                val desc = error?.description?.toString() ?: ""
-                                                webViewError = true
-                                                webViewErrorMessage = if (desc.contains("REFUSED", ignoreCase = true) || desc.contains("ERR_CONNECTION", ignoreCase = true) || desc.contains("NAME_NOT_RESOLVED", ignoreCase = true)) {
-                                                    "Server menolak koneksi (Offline / Diblokir ISP)"
-                                                } else {
-                                                    desc.ifEmpty { "Gagal memuat pemutar video" }
-                                                }
-                                            }
-                                        }
+                                    override fun onPageFinished(view: WebView?, url: String?) {
+                                        super.onPageFinished(view, url)
+                                        isLoading = false
+                                    }
 
-                                        @Deprecated("Deprecated in Java")
-                                        override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
-                                            super.onReceivedError(view, errorCode, description, failingUrl)
+                                    override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                                        super.onReceivedError(view, request, error)
+                                        if (request?.isForMainFrame == true) {
+                                            val desc = error?.description?.toString() ?: ""
                                             webViewError = true
-                                            webViewErrorMessage = if (description?.contains("REFUSED", ignoreCase = true) == true) {
+                                            webViewErrorMessage = if (desc.contains("REFUSED", ignoreCase = true) || desc.contains("ERR_CONNECTION", ignoreCase = true) || desc.contains("NAME_NOT_RESOLVED", ignoreCase = true)) {
                                                 "Server menolak koneksi (Offline / Diblokir ISP)"
                                             } else {
-                                                description ?: "Gagal memuat pemutar video"
+                                                desc.ifEmpty { "Gagal memuat pemutar video" }
                                             }
+                                            isLoading = false
                                         }
                                     }
-                                    loadUrl(iframeUrl)
-                                }
-                            },
-                            update = { webView ->
-                                webViewInstance = webView
-                                if (webView.url != iframeUrl) {
-                                    webView.loadUrl(iframeUrl)
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
 
-                        // Elegant Fallback Overlay when WebView encounters an error
-                        if (webViewError) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color(0xFF141419))
-                                    .padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
+                                    @Deprecated("Deprecated in Java")
+                                    override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
+                                        super.onReceivedError(view, errorCode, description, failingUrl)
+                                        webViewError = true
+                                        webViewErrorMessage = if (description?.contains("REFUSED", ignoreCase = true) == true) {
+                                            "Server menolak koneksi (Offline / Diblokir ISP)"
+                                        } else {
+                                            description ?: "Gagal memuat pemutar video"
+                                        }
+                                        isLoading = false
+                                    }
+                                }
+                                loadUrl(iframeUrl)
+                            }
+                        },
+                        update = { webView ->
+                            webViewInstance = webView
+                            if (webView.url != iframeUrl) {
+                                webView.stopLoading()
+                                webView.loadUrl(iframeUrl)
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Elegant Fallback Overlay when WebView encounters an error
+                    if (webViewError) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color(0xFF141419))
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Peringatan",
+                                tint = Color(0xFFFFB300),
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Server Pemutar Offline / Gangguan",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = webViewErrorMessage ?: "Server pemutar ini tidak merespons. Silakan ganti ke server cadangan di bawah.",
+                                color = TextMuted,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2
+                            )
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            val allServers = streamResult?.servers ?: emptyList()
+                            val curIndex = allServers.indexOfFirst { it == selectedServer || (it.url == selectedServer?.url && it.name == selectedServer?.name) }
+                            val nextIndex = if (curIndex >= 0 && allServers.size > 1) (curIndex + 1) % allServers.size else -1
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Warning,
-                                    contentDescription = "Peringatan",
-                                    tint = Color(0xFFFFB300),
-                                    modifier = Modifier.size(36.dp)
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "Server Pemutar Offline / Gangguan",
-                                    color = Color.White,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = webViewErrorMessage ?: "Server pemutar ini tidak merespons. Silakan ganti ke server cadangan di bawah.",
-                                    color = TextMuted,
-                                    fontSize = 12.sp,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 2
-                                )
-                                Spacer(modifier = Modifier.height(14.dp))
-
-                                val allServers = streamResult?.servers ?: emptyList()
-                                val curIndex = allServers.indexOfFirst { it.url == selectedServer?.url || it.name == selectedServer?.name }
-                                val nextIndex = if (curIndex >= 0 && allServers.size > 1) (curIndex + 1) % allServers.size else -1
-
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (nextIndex >= 0 && nextIndex != curIndex) {
-                                        val nextServer = allServers[nextIndex]
-                                        Box(
-                                            modifier = Modifier
-                                                .height(40.dp)
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(Color.White)
-                                                .clickable {
-                                                    webViewError = false
-                                                    webViewErrorMessage = null
-                                                    selectedServer = nextServer
-                                                }
-                                                .padding(horizontal = 16.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "Beralih ke ${nextServer.name}",
-                                                color = CanvasBlack,
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.ExtraBold
-                                            )
-                                        }
-                                    }
-
+                                if (nextIndex >= 0 && nextIndex != curIndex) {
+                                    val nextServer = allServers[nextIndex]
                                     Box(
                                         modifier = Modifier
                                             .height(40.dp)
                                             .clip(RoundedCornerShape(10.dp))
-                                            .border(1.dp, GlassBorder, RoundedCornerShape(10.dp))
-                                            .background(SurfaceElevated)
+                                            .background(Color.White)
                                             .clickable {
                                                 webViewError = false
                                                 webViewErrorMessage = null
-                                                webViewInstance?.loadUrl(iframeUrl)
+                                                selectedServer = nextServer
                                             }
                                             .padding(horizontal = 16.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
-                                            text = "Muat Ulang",
-                                            color = Color.White,
+                                            text = "Beralih ke ${nextServer.name}",
+                                            color = CanvasBlack,
                                             fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold
+                                            fontWeight = FontWeight.ExtraBold
                                         )
                                     }
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .height(40.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .border(1.dp, GlassBorder, RoundedCornerShape(10.dp))
+                                        .background(SurfaceElevated)
+                                        .clickable {
+                                            webViewError = false
+                                            webViewErrorMessage = null
+                                            webViewInstance?.loadUrl(iframeUrl)
+                                        }
+                                        .padding(horizontal = 16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Muat Ulang",
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
                             }
                         }
                     }
-                } else {
-                    Text(
-                        text = "Video tidak dapat dimuat atau belum tersedia.",
-                        color = TextMuted,
-                        fontSize = 13.sp
-                    )
+                }
+            } else if (!isLoading) {
+                Text(
+                    text = "Video tidak dapat dimuat atau belum tersedia.",
+                    color = TextMuted,
+                    fontSize = 13.sp
+                )
+            }
+
+            // Elegant Loading Spinner Overlay on top of player
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xB3000000)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
                 }
             }
         }
@@ -701,7 +716,7 @@ fun VideoPlayerScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         servers.forEach { s ->
-                            val isSelected = selectedServer?.url == s.url || selectedServer?.name == s.name
+                            val isSelected = (selectedServer == s) || (selectedServer?.name == s.name && selectedServer?.url == s.url)
                             Box(
                                 modifier = Modifier
                                     .height(46.dp)
@@ -713,10 +728,22 @@ fun VideoPlayerScreen(
                                     )
                                     .background(if (isSelected) Color.White else SurfaceElevated)
                                     .clickable {
-                                        if (selectedServer?.url != s.url) {
-                                            webViewError = false
-                                            webViewErrorMessage = null
+                                        webViewError = false
+                                        webViewErrorMessage = null
+                                        if (selectedServer != s) {
                                             selectedServer = s
+                                        } else {
+                                            val serverIsDirect = s.isDirectHls || s.url.contains(".mp4", ignoreCase = true) || s.url.contains(".m3u8", ignoreCase = true) || s.url.contains(".mpd", ignoreCase = true)
+                                            if (serverIsDirect) {
+                                                isLoading = true
+                                                exoPlayer.seekToDefaultPosition()
+                                                exoPlayer.prepare()
+                                                exoPlayer.play()
+                                            } else {
+                                                isLoading = true
+                                                webViewInstance?.stopLoading()
+                                                webViewInstance?.loadUrl(s.url)
+                                            }
                                         }
                                     }
                                     .padding(horizontal = 20.dp),

@@ -96,9 +96,22 @@ object DonghuaScraper {
     }
 
     suspend fun getDetail(urlInput: String): MediaDetail? = withContext(Dispatchers.IO) {
-        val targetUrl = if (urlInput.startsWith("http")) urlInput else "$BASE_URL/$urlInput/"
-        val html = fetchHtml(targetUrl) ?: return@withContext null
-        val doc = Jsoup.parse(html)
+        var targetUrl = if (urlInput.startsWith("http")) urlInput else "$BASE_URL/$urlInput/"
+        var html = fetchHtml(targetUrl) ?: return@withContext null
+        var doc = Jsoup.parse(html)
+
+        // If targetUrl is an episode URL, find link back to the main series page
+        if (!targetUrl.contains("/anime/") || targetUrl.contains("-episode-", ignoreCase = true)) {
+            val seriesLink = doc.selectFirst(".ts-breadcrumb a[href*='/anime/'], .breadcrumb a[href*='/anime/'], a[href*='anichin.ro/anime/']")?.attr("href")
+            if (!seriesLink.isNullOrEmpty() && seriesLink.contains("/anime/")) {
+                val seriesHtml = fetchHtml(seriesLink)
+                if (seriesHtml != null) {
+                    targetUrl = seriesLink
+                    html = seriesHtml
+                    doc = Jsoup.parse(seriesHtml)
+                }
+            }
+        }
 
         val title = doc.selectFirst("h1.entry-title, h1, .title")?.text()?.trim() ?: "Donghua Detail"
         val imgEl = doc.selectFirst(".thumb img, .poster img")
@@ -112,23 +125,50 @@ object DonghuaScraper {
         }
 
         val episodes = mutableListOf<EpisodeItem>()
-        // Check .eplister or .episodes-ul
-        doc.select(".eplister ul li, .episodes-ul a, a[href*='episode']").forEachIndexed { i, el ->
+        // Parse episodes from .episodes-ul a, .eplister li a, a.ep-item
+        doc.select(".episodes-ul a, .eplister ul li a, .listepisodes a, a.ep-item, a.item").forEach { el ->
             val href = if (el.tagName() == "a") el.attr("href") else el.selectFirst("a")?.attr("href") ?: ""
-            val epNum = el.selectFirst(".epl-num")?.text()?.trim() ?: (i + 1).toString()
-            val epTitle = el.selectFirst(".epl-title")?.text()?.trim() ?: "Episode $epNum"
-
-            if (href.isNotBlank() && !episodes.any { it.url == href }) {
-                episodes.add(
-                    EpisodeItem(
-                        id = href,
-                        episodeNumber = epNum,
-                        title = epTitle,
-                        url = href
+            if (href.isNotBlank() && href.startsWith("http") &&
+                !href.contains("facebook") && !href.contains("twitter") && !href.contains("whatsapp") && !href.contains("t.me") && !href.contains("sharer")
+            ) {
+                val orderText = el.selectFirst(".order, .epl-num")?.text()?.trim().orEmpty()
+                val dataNum = el.attr("data-number").trim()
+                val urlNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(href)?.groupValues?.get(1).orEmpty()
+                val epNum = when {
+                    dataNum.isNotBlank() -> dataNum
+                    orderText.isNotBlank() -> orderText
+                    urlNum.isNotBlank() -> urlNum
+                    else -> (episodes.size + 1).toString()
+                }
+                val epTitle = if (epNum.isNotBlank()) "Episode $epNum" else "Episode"
+                if (!episodes.any { it.url == href }) {
+                    episodes.add(
+                        EpisodeItem(
+                            id = href,
+                            episodeNumber = epNum,
+                            title = epTitle,
+                            url = href
+                        )
                     )
-                )
+                }
             }
         }
+
+        // Fallback if no episodes parsed
+        if (episodes.isEmpty()) {
+            val epNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(targetUrl)?.groupValues?.get(1) ?: "1"
+            episodes.add(
+                EpisodeItem(
+                    id = targetUrl,
+                    episodeNumber = epNum,
+                    title = "Episode $epNum",
+                    url = targetUrl
+                )
+            )
+        }
+
+        // Sort so Episode 1 is first
+        episodes.sortBy { it.episodeNumber.toIntOrNull() ?: 0 }
 
         MediaDetail(
             id = targetUrl,
@@ -145,7 +185,17 @@ object DonghuaScraper {
     }
 
     suspend fun getStream(urlInput: String): StreamResult? = withContext(Dispatchers.IO) {
-        val targetUrl = if (urlInput.startsWith("http")) urlInput else "$BASE_URL/$urlInput/"
+        var targetUrl = if (urlInput.startsWith("http")) urlInput else "$BASE_URL/$urlInput/"
+
+        // If targetUrl is a series URL without episode, resolve first episode from getDetail
+        if (targetUrl.contains("/anime/", ignoreCase = true) || !targetUrl.contains("episode", ignoreCase = true)) {
+            val detail = getDetail(targetUrl)
+            val firstEp = detail?.episodes?.firstOrNull()?.url
+            if (!firstEp.isNullOrBlank() && firstEp != targetUrl) {
+                targetUrl = firstEp
+            }
+        }
+
         val html = fetchHtml(targetUrl) ?: return@withContext null
         val doc = Jsoup.parse(html)
 
@@ -184,12 +234,13 @@ object DonghuaScraper {
             val dataSrc = iframe.attr("data-src").trim()
             val rawSrc = iframe.attr("src").trim()
 
-            val src = when {
+            var src = when {
                 litespeed.isNotBlank() && !litespeed.contains("about:blank") -> litespeed
                 dataSrc.isNotBlank() && !dataSrc.contains("about:blank") -> dataSrc
                 rawSrc.isNotBlank() && !rawSrc.contains("about:blank") -> rawSrc
                 else -> ""
             }
+            src = src.replace("&#038;", "&").replace("&amp;", "&")
 
             if (src.isNotBlank() && !isBlockedOrDead(src) && !servers.any { it.url == src }) {
                 servers.add(StreamServerItem(extractServerName(src, "Default Player"), src, isDirectHls = false))
@@ -209,7 +260,8 @@ object DonghuaScraper {
                         decoded = String(bytes, Charsets.UTF_8)
                     }
                     val match = Regex("""src=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(decoded)
-                    val iframeUrl = match?.groupValues?.get(1)?.trim() ?: if (decoded.startsWith("http")) decoded.trim() else null
+                    var iframeUrl = match?.groupValues?.get(1)?.trim() ?: if (decoded.startsWith("http")) decoded.trim() else null
+                    iframeUrl = iframeUrl?.replace("&#038;", "&")?.replace("&amp;", "&")
 
                     if (!iframeUrl.isNullOrEmpty() && !isBlockedOrDead(iframeUrl) && !servers.any { it.url == iframeUrl }) {
                         // Check if it's TurboVIP and try to extract direct .m3u8
