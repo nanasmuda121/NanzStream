@@ -72,14 +72,23 @@ fun MangaReaderScreen(
     var downloadProgress by remember { mutableStateOf("") }
 
     // Fetch chapters list for previous/next chapter navigation
-    LaunchedEffect(mangaId) {
-        try {
-            val detail = repository.getDetail(CategoryType.MANGA, mangaId)
-            if (detail != null && detail.chapters.isNotEmpty()) {
-                chapters = detail.chapters
+    LaunchedEffect(mangaId, currentChapterId) {
+        val targetMangaId = mangaId.ifBlank {
+            Regex("""title_no=(\d+)""").find(currentChapterId)?.groupValues?.get(1).orEmpty()
+        }
+        if (targetMangaId.isNotBlank() && chapters.isEmpty()) {
+            try {
+                val detail = repository.getDetail(CategoryType.MANGA, targetMangaId)
+                if (detail != null && detail.chapters.isNotEmpty()) {
+                    chapters = detail.chapters
+                    val currentCh = detail.chapters.find { it.id == currentChapterId }
+                    if (currentCh != null && (activeChapterTitle.isBlank() || activeChapterTitle == "Komik")) {
+                        activeChapterTitle = currentCh.title
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
@@ -111,6 +120,7 @@ fun MangaReaderScreen(
     // Load pages when chapter changes
     LaunchedEffect(currentChapterId) {
         isLoading = true
+        pages = emptyList() // Clear previous chapter pages so new chapter loads freshly
         isDownloaded = NanzStreamApp.offlineManga.isChapterDownloaded(currentChapterId)
 
         // Reset scroll position to top
