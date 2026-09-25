@@ -72,20 +72,6 @@ fun LiveTvScreen(
     var retryTrigger by remember { mutableIntStateOf(0) }
     var autoRetryCount by remember { mutableIntStateOf(0) }
 
-    // Listen to Picture-in-Picture mode transitions
-    DisposableEffect(activity) {
-        val pipListener = Consumer<PictureInPictureModeChangedInfo> { info ->
-            isInPiP = info.isInPictureInPictureMode
-            if (info.isInPictureInPictureMode) {
-                exoPlayer.play()
-            }
-        }
-        activity?.addOnPictureInPictureModeChangedListener(pipListener)
-        onDispose {
-            activity?.removeOnPictureInPictureModeChangedListener(pipListener)
-        }
-    }
-
     // Configure ExoPlayer with live-tuned buffer control to prevent skipping/looping
     val exoPlayer = remember {
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
@@ -131,6 +117,20 @@ fun LiveTvScreen(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
+        }
+    }
+
+    // Listen to Picture-in-Picture mode transitions
+    DisposableEffect(activity) {
+        val pipListener = Consumer<PictureInPictureModeChangedInfo> { info ->
+            isInPiP = info.isInPictureInPictureMode
+            if (info.isInPictureInPictureMode) {
+                exoPlayer.play()
+            }
+        }
+        activity?.addOnPictureInPictureModeChangedListener(pipListener)
+        onDispose {
+            activity?.removeOnPictureInPictureModeChangedListener(pipListener)
         }
     }
 
