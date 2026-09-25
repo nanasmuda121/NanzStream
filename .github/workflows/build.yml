@@ -40,14 +40,14 @@ jobs:
       - name: Prepare Release APK Artifact
         run: |
           mkdir -p build-output
-          cp app/build/outputs/apk/release/app-release.apk build-output/NanzStream-v1.0.3-universal-release.apk
+          cp app/build/outputs/apk/release/app-release.apk build-output/NanzStream-v1.0.4-universal-release.apk
           ls -lh build-output/
 
       - name: Upload Universal Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: NanzStream-v1.0.3-universal-release
-          path: build-output/NanzStream-v1.0.3-universal-release.apk
+          name: NanzStream-v1.0.4-universal-release
+          path: build-output/NanzStream-v1.0.4-universal-release.apk
           if-no-files-found: error
           retention-days: 30
 

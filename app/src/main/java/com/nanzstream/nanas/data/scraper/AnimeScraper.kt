@@ -212,32 +212,59 @@ object AnimeScraper {
         val title = doc.selectFirst("h1.entry-title, h1")?.text()?.trim() ?: "Anime Episode"
         val servers = mutableListOf<StreamServerItem>()
 
-        // 1. Direct iframes on page
+        fun isBlockedOrDead(u: String): Boolean {
+            val lower = u.lowercase()
+            return lower.contains("kotaksb") ||
+                    lower.contains("about:blank") ||
+                    lower.contains("javascript:") ||
+                    !lower.startsWith("http")
+        }
+
+        fun extractServerName(url: String, fallback: String): String {
+            val lower = url.lowercase()
+            return when {
+                lower.contains("blogger.com") || lower.contains("google.com/video") -> "Blogger Player"
+                lower.contains("ok.ru") -> "OK.ru Player"
+                lower.contains("dailymotion.com") || lower.contains("dai.ly") -> "Dailymotion"
+                lower.contains("rumble.com") -> "Rumble"
+                lower.contains("gofile.io") -> "Gofile"
+                lower.contains("pixeldrain.com") -> "Pixeldrain"
+                lower.contains("youtube.com") || lower.contains("youtu.be") -> "YouTube"
+                lower.contains("mp4upload") -> "Mp4Upload"
+                fallback.isNotBlank() && !fallback.contains("Server", ignoreCase = true) && !fallback.contains("Select", ignoreCase = true) -> fallback
+                else -> "Server ${servers.size + 1}"
+            }
+        }
+
+        // 1. Direct iframes on page (checking data-litespeed-src first for Samehadaku caching, then data-src, then src)
         doc.select("#pembed iframe, .player-embed iframe, iframe").forEach { iframe ->
-            val src = iframe.attr("data-src").ifEmpty { iframe.attr("src") }
-            if (src.startsWith("http") && !src.contains("about:blank") && !servers.any { it.url == src }) {
-                val name = when {
-                    src.contains("blogger") -> "Blogger Player"
-                    src.contains("ok.ru") -> "OK.ru"
-                    src.contains("dailymotion") -> "Dailymotion"
-                    else -> "Server Utama"
-                }
-                servers.add(StreamServerItem(name, src, isDirectHls = false))
+            val litespeed = iframe.attr("data-litespeed-src").trim()
+            val dataSrc = iframe.attr("data-src").trim()
+            val rawSrc = iframe.attr("src").trim()
+
+            val src = when {
+                litespeed.isNotBlank() && !litespeed.contains("about:blank") -> litespeed
+                dataSrc.isNotBlank() && !dataSrc.contains("about:blank") -> dataSrc
+                rawSrc.isNotBlank() && !rawSrc.contains("about:blank") -> rawSrc
+                else -> ""
+            }
+
+            if (src.startsWith("http") && !isBlockedOrDead(src) && !servers.any { it.url == src }) {
+                servers.add(StreamServerItem(extractServerName(src, "Blogger Player"), src, isDirectHls = false))
             }
         }
 
         // 2. Select mirror options with base64 encoded iframe tags
         doc.select("select.mirror option, .server option, .mirror option, select option").forEachIndexed { i, opt ->
             val name = opt.text().trim()
-            val rawVal = opt.attr("value")
+            val rawVal = opt.attr("value").trim()
             if (rawVal.length > 15) {
                 try {
                     val decoded = String(Base64.decode(rawVal, Base64.DEFAULT), Charsets.UTF_8)
                     val match = Regex("""src=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(decoded)
-                    val iframeUrl = match?.groupValues?.get(1) ?: if (decoded.startsWith("http")) decoded else null
-                    if (!iframeUrl.isNullOrEmpty() && !servers.any { it.url == iframeUrl }) {
-                        val sName = if (name.isNotBlank() && !name.contains("Server", true)) name else "Server ${i + 1}"
-                        servers.add(StreamServerItem(sName, iframeUrl, isDirectHls = false))
+                    val iframeUrl = match?.groupValues?.get(1)?.trim() ?: if (decoded.startsWith("http")) decoded.trim() else null
+                    if (!iframeUrl.isNullOrEmpty() && !isBlockedOrDead(iframeUrl) && !servers.any { it.url == iframeUrl }) {
+                        servers.add(StreamServerItem(extractServerName(iframeUrl, name), iframeUrl, isDirectHls = false))
                     }
                 } catch (e: Exception) {
                     // Ignore decoding error
@@ -245,13 +272,26 @@ object AnimeScraper {
             }
         }
 
-        val primaryUrl = servers.firstOrNull()?.url
+        // Prioritize reliable players first (Blogger, OK.ru, Dailymotion, Rumble)
+        val sortedServers = servers.sortedWith(
+            compareBy<StreamServerItem> { item ->
+                when {
+                    item.url.contains("blogger.com") || item.url.contains("google.com/video") -> 0
+                    item.url.contains("ok.ru") -> 1
+                    item.url.contains("dailymotion.com") -> 2
+                    item.url.contains("rumble.com") -> 3
+                    else -> 4
+                }
+            }
+        )
+
+        val primaryUrl = sortedServers.firstOrNull()?.url
 
         StreamResult(
             title = title,
             directHlsUrl = null,
             iframePlayerUrl = primaryUrl,
-            servers = servers
+            servers = sortedServers
         )
     }
 }

@@ -152,21 +152,54 @@ object DonghuaScraper {
         val title = doc.selectFirst("h1.entry-title, h1")?.text()?.trim() ?: "Donghua Episode"
         val servers = mutableListOf<StreamServerItem>()
 
-        // Check iframes
-        doc.select("iframe").forEach { iframe ->
-            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
-            if (src.isNotBlank() && !src.contains("about:blank") && !servers.any { it.url == src }) {
-                val name = if (src.contains("ok.ru")) "OK.ru Player"
-                else if (src.contains("dailymotion")) "Dailymotion"
-                else "Default Player"
-                servers.add(StreamServerItem(name, src, isDirectHls = false))
+        fun isBlockedOrDead(u: String): Boolean {
+            val lower = u.lowercase()
+            return lower.contains("kotaksb") ||
+                    lower.contains("about:blank") ||
+                    lower.contains("javascript:") ||
+                    !lower.startsWith("http")
+        }
+
+        fun extractServerName(url: String, fallback: String): String {
+            val lower = url.lowercase()
+            return when {
+                lower.contains("ok.ru") -> "OK.ru Player"
+                lower.contains("blogger.com") || lower.contains("google.com/video") -> "Blogger Player"
+                lower.contains("dailymotion.com") || lower.contains("dai.ly") -> "Dailymotion"
+                lower.contains("rumble.com") -> "Rumble"
+                lower.contains("d.tube") -> "D.Tube"
+                lower.contains("abyss") -> "Abyss"
+                lower.contains("gofile.io") -> "Gofile"
+                lower.contains("pixeldrain.com") -> "Pixeldrain"
+                lower.contains("youtube.com") || lower.contains("youtu.be") -> "YouTube"
+                lower.contains("mp4upload") -> "Mp4Upload"
+                fallback.isNotBlank() && !fallback.contains("Server", ignoreCase = true) && !fallback.contains("Select", ignoreCase = true) -> fallback
+                else -> "Server ${servers.size + 1}"
             }
         }
 
-        // Check server tabs
-        doc.select(".server-item a, ul.mirror li a").forEachIndexed { i, el ->
+        // 1. Check iframes (checking data-litespeed-src, data-src, src)
+        doc.select("iframe").forEach { iframe ->
+            val litespeed = iframe.attr("data-litespeed-src").trim()
+            val dataSrc = iframe.attr("data-src").trim()
+            val rawSrc = iframe.attr("src").trim()
+
+            val src = when {
+                litespeed.isNotBlank() && !litespeed.contains("about:blank") -> litespeed
+                dataSrc.isNotBlank() && !dataSrc.contains("about:blank") -> dataSrc
+                rawSrc.isNotBlank() && !rawSrc.contains("about:blank") -> rawSrc
+                else -> ""
+            }
+
+            if (src.isNotBlank() && !isBlockedOrDead(src) && !servers.any { it.url == src }) {
+                servers.add(StreamServerItem(extractServerName(src, "Default Player"), src, isDirectHls = false))
+            }
+        }
+
+        // 2. Check server tabs and mirror options
+        doc.select(".server-item a, ul.mirror li a, .mirror option, select.mirror option, select option").forEachIndexed { i, el ->
             val serverName = el.text().trim().ifBlank { "Server ${i + 1}" }
-            val dataHash = el.attr("data-hash").ifEmpty { el.attr("data-video") }
+            val dataHash = el.attr("data-hash").ifEmpty { el.attr("data-video") }.ifEmpty { el.attr("value") }.trim()
 
             if (dataHash.isNotBlank()) {
                 try {
@@ -175,11 +208,11 @@ object DonghuaScraper {
                         val bytes = Base64.decode(dataHash, Base64.DEFAULT)
                         decoded = String(bytes, Charsets.UTF_8)
                     }
-                    val match = Regex("""src=["']([^"']+)["']""").find(decoded)
-                    val iframeUrl = match?.groupValues?.get(1) ?: if (decoded.startsWith("http")) decoded else null
+                    val match = Regex("""src=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(decoded)
+                    val iframeUrl = match?.groupValues?.get(1)?.trim() ?: if (decoded.startsWith("http")) decoded.trim() else null
 
-                    if (!iframeUrl.isNullOrEmpty() && !servers.any { it.url == iframeUrl }) {
-                        servers.add(StreamServerItem(serverName, iframeUrl, isDirectHls = false))
+                    if (!iframeUrl.isNullOrEmpty() && !isBlockedOrDead(iframeUrl) && !servers.any { it.url == iframeUrl }) {
+                        servers.add(StreamServerItem(extractServerName(iframeUrl, serverName), iframeUrl, isDirectHls = false))
                     }
                 } catch (e: Exception) {
                     // Ignore
@@ -187,13 +220,26 @@ object DonghuaScraper {
             }
         }
 
-        val primaryUrl = servers.firstOrNull()?.url
+        // Prioritize reliable players first (OK.ru, Blogger, Dailymotion, Rumble)
+        val sortedServers = servers.sortedWith(
+            compareBy<StreamServerItem> { item ->
+                when {
+                    item.url.contains("ok.ru") -> 0
+                    item.url.contains("blogger.com") -> 1
+                    item.url.contains("dailymotion.com") -> 2
+                    item.url.contains("rumble.com") -> 3
+                    else -> 4
+                }
+            }
+        )
+
+        val primaryUrl = sortedServers.firstOrNull()?.url
 
         StreamResult(
             title = title,
             directHlsUrl = null,
             iframePlayerUrl = primaryUrl,
-            servers = servers
+            servers = sortedServers
         )
     }
 }
