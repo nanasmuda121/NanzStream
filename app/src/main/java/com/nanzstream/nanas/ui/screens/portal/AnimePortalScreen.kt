@@ -285,6 +285,8 @@ fun AnimePortalScreen(
                             }
                         }
                     }
+                }
+
                 AnimeTab.JADWAL -> {
                     Column(modifier = Modifier.fillMaxSize()) {
                         DayScheduleBar(

@@ -285,6 +285,8 @@ fun DonghuaPortalScreen(
                             }
                         }
                     }
+                }
+
                 DonghuaTab.JADWAL -> {
                     Column(modifier = Modifier.fillMaxSize()) {
                         DayScheduleBar(
