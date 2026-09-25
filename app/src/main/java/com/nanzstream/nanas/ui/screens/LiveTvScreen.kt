@@ -76,6 +76,9 @@ fun LiveTvScreen(
     DisposableEffect(activity) {
         val pipListener = Consumer<PictureInPictureModeChangedInfo> { info ->
             isInPiP = info.isInPictureInPictureMode
+            if (info.isInPictureInPictureMode) {
+                exoPlayer.play()
+            }
         }
         activity?.addOnPictureInPictureModeChangedListener(pipListener)
         onDispose {
@@ -117,6 +120,18 @@ fun LiveTvScreen(
             .build().apply {
                 playWhenReady = true
             }
+    }
+
+    val playerViewInstance = remember {
+        PlayerView(context).apply {
+            player = exoPlayer
+            useController = true
+            setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
     }
 
     DisposableEffect(Unit) {
@@ -197,6 +212,8 @@ fun LiveTvScreen(
 
     fun triggerPiP(act: Activity?) {
         if (act != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            isInPiP = true
+            exoPlayer.play()
             val aspectRatio = Rational(16, 9)
             val paramsBuilder = PictureInPictureParams.Builder()
                 .setAspectRatio(aspectRatio)
@@ -209,26 +226,17 @@ fun LiveTvScreen(
 
     // When inside PiP Mode, show ONLY the clean PlayerView filling the whole frame
     if (isInPiP) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
-            contentAlignment = Alignment.Center
-        ) {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = exoPlayer
-                        useController = false
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+        AndroidView(
+            factory = {
+                playerViewInstance.apply {
+                    useController = false
+                }
+            },
+            update = { pv ->
+                pv.useController = false
+            },
+            modifier = Modifier.fillMaxSize()
+        )
         return
     }
 
@@ -254,15 +262,13 @@ fun LiveTvScreen(
             contentAlignment = Alignment.Center
         ) {
             AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = exoPlayer
+                factory = {
+                    playerViewInstance.apply {
                         useController = true
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
                     }
+                },
+                update = { pv ->
+                    pv.useController = true
                 },
                 modifier = Modifier.fillMaxSize()
             )

@@ -26,8 +26,7 @@ object RouteEncoder {
                 Base64.URL_SAFE or Base64.NO_WRAP
             )
             val decodedStr = String(bytes, Charsets.UTF_8)
-            val allowedChars = "-_.~%/?&=:+"
-            if (decodedStr.isNotBlank() && (decodedStr.startsWith("http") || decodedStr.all { it.isLetterOrDigit() || it in allowedChars })) {
+            if (decodedStr.isNotBlank()) {
                 decodedStr
             } else {
                 java.net.URLDecoder.decode(encoded, "UTF-8")

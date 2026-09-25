@@ -312,6 +312,7 @@ object OtakudesuScraper {
                         if (desuHtml != null) {
                             val directMatch = Regex("""videoURL\s*=\s*["']([^"']+)["']""").find(desuHtml)
                                 ?: Regex("""(https?://[^\s"']+\.mp4[^\s"']*)""").find(desuHtml)
+                                ?: Regex("""(https?://[^\s"']+\.m3u8[^\s"']*)""").find(desuHtml)
                             val directUrl = directMatch?.groupValues?.get(1)
                             if (!directUrl.isNullOrBlank() && directUrl.startsWith("http") && !directUrl.endsWith("/.mp4") && !directUrl.contains("/download/.mp4")) {
                                 directMp4 = directUrl
@@ -329,6 +330,13 @@ object OtakudesuScraper {
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
+                } else if (src.contains("ok.ru/videoembed/")) {
+                    val okDirect = StreamResolver.extractOkRuDirect(src, "$BASE_URL/")
+                    if (!okDirect.isNullOrBlank()) {
+                        if (directMp4 == null) directMp4 = okDirect
+                        servers.add(StreamServerItem("OK.ru Direct Stream", okDirect, isDirectHls = true))
+                    }
+                    servers.add(StreamServerItem("OK.ru Player", src, isDirectHls = false))
                 } else {
                     val name = when {
                         src.contains("blogger.com") -> "Blogger Player"

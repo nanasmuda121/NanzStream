@@ -242,8 +242,16 @@ object DonghuaScraper {
             }
             src = src.replace("&#038;", "&").replace("&amp;", "&")
 
-            if (src.isNotBlank() && !isBlockedOrDead(src) && !servers.any { it.url == src }) {
-                servers.add(StreamServerItem(extractServerName(src, "Default Player"), src, isDirectHls = false))
+            if (src.isNotBlank() && !isBlockedOrDead(src)) {
+                if (src.contains("ok.ru/videoembed/")) {
+                    val direct = StreamResolver.extractOkRuDirect(src, "https://anichin.ro/")
+                    if (!direct.isNullOrBlank() && !servers.any { it.url == direct }) {
+                        servers.add(StreamServerItem("Anichin OK.ru (Direct Stream)", direct, isDirectHls = true))
+                    }
+                }
+                if (!servers.any { it.url == src }) {
+                    servers.add(StreamServerItem(extractServerName(src, "Default Player"), src, isDirectHls = false))
+                }
             }
         }
 
@@ -263,10 +271,18 @@ object DonghuaScraper {
                     var iframeUrl = match?.groupValues?.get(1)?.trim() ?: if (decoded.startsWith("http")) decoded.trim() else null
                     iframeUrl = iframeUrl?.replace("&#038;", "&")?.replace("&amp;", "&")
 
-                    if (!iframeUrl.isNullOrEmpty() && !isBlockedOrDead(iframeUrl) && !servers.any { it.url == iframeUrl }) {
+                    if (!iframeUrl.isNullOrEmpty() && !isBlockedOrDead(iframeUrl)) {
+                        // Check if it's OK.ru and extract direct stream
+                        if (iframeUrl.contains("ok.ru/videoembed/")) {
+                            val okDirect = StreamResolver.extractOkRuDirect(iframeUrl, "https://anichin.ro/")
+                            if (!okDirect.isNullOrBlank() && !servers.any { it.url == okDirect }) {
+                                servers.add(StreamServerItem("Anichin OK.ru (Direct Stream)", okDirect, isDirectHls = true))
+                            }
+                        }
+
                         // Check if it's TurboVIP and try to extract direct .m3u8
                         var directHlsUrl: String? = null
-                        if (iframeUrl.contains("turbovidhls.com")) {
+                        if (iframeUrl.contains("turbovidhls.com") || iframeUrl.contains("turbovid")) {
                             try {
                                 val turboHtml = fetchHtml(iframeUrl)
                                 val m3u8Match = Regex("""(https?://[^\s"']+\.m3u8[^\s"']*)""").find(turboHtml ?: "")
@@ -280,7 +296,7 @@ object DonghuaScraper {
                             if (!servers.any { it.url == directHlsUrl }) {
                                 servers.add(StreamServerItem("TurboVIP (Direct HLS)", directHlsUrl, isDirectHls = true))
                             }
-                        } else {
+                        } else if (!servers.any { it.url == iframeUrl }) {
                             servers.add(StreamServerItem(extractServerName(iframeUrl, serverName), iframeUrl, isDirectHls = false))
                         }
                     }

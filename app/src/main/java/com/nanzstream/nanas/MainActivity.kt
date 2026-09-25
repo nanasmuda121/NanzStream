@@ -1,5 +1,6 @@
 package com.nanzstream.nanas
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -46,7 +47,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        if (!isInPipMode) {
+        if (!isInPipMode && (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || !isInPictureInPictureMode)) {
             PlaybackController.stopAllPlayback?.invoke()
         }
     }
