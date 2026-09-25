@@ -45,6 +45,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -64,68 +65,118 @@ data class VerifiedChannel(
     val id: String,
     val name: String,
     val streamUrl: String,
+    val backupUrl: String? = null,
     val genre: String,
     val logoUrl: String,
     val number: Int
 )
 
 private val VERIFIED_CHANNELS = listOf(
-    // === NASIONAL ===
-    VerifiedChannel("gtv", "GTV HD", "https://cdnjktcyber05.transvision.co.id/riutx01-439abf566997b187117993103dfd8508/dash/R1RWLUNIQU5ORUw/manifest.mpd", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/GTV_%28Indonesia%29_2017_logo.svg/512px-GTV_%28Indonesia%29_2017_logo.svg.png", 1),
-    VerifiedChannel("mnctv", "MNC TV HD", "https://cdnjktcyber05.transvision.co.id/riutx01-439abf566997b187117993103dfd8508/dash/TU5DVFY/manifest.mpd", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/MNCTV_logo_2020.svg/512px-MNCTV_logo_2020.svg.png", 2),
-    VerifiedChannel("transtv", "Trans TV HD", "https://green-night-d2b4.iontv.workers.dev/transtv.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Trans_TV_2013.svg/512px-Trans_TV_2013.svg.png", 3),
-    VerifiedChannel("trans7", "Trans7 HD", "https://green-night-d2b4.iontv.workers.dev/trans7.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Trans7_logo_2013.svg/512px-Trans7_logo_2013.svg.png", 4),
-    VerifiedChannel("sctv", "SCTV HD", "https://op-flashcon-digdayahd-1.dens.tv/h/h217/01.m3u8?app_type=web&userid=lite&chname=SCTV", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/SCTV_logo_2005.svg/512px-SCTV_logo_2005.svg.png", 5),
-    VerifiedChannel("indosiar", "Indosiar HD", "https://op-flashcon-digdayahd-1.dens.tv/h/h207/01.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/Indosiar_logo_2015.svg/512px-Indosiar_logo_2015.svg.png", 6),
-    VerifiedChannel("antv", "ANTV HD", "https://op-flashcon-digdayahd-1.dens.tv/h/h235/01.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/ANTV_logo_2017.svg/512px-ANTV_logo_2017.svg.png", 7),
-    VerifiedChannel("inews", "iNews HD", "https://live.i-news.tv/hls/stream.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/INews_2023.svg/512px-INews_2023.svg.png", 8),
-    VerifiedChannel("kompastv", "Kompas TV HD", "https://op-flashcon-digdayahd-1.dens.tv/s/s104/index.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/Kompas_TV_2018.svg/512px-Kompas_TV_2018.svg.png", 9),
-    VerifiedChannel("rtv", "RTV HD", "https://rtvstream.rtv.co.id:4555/hls/rtv.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/RTV_logo.svg/512px-RTV_logo.svg.png", 10),
-    VerifiedChannel("metrotv", "Metro TV HD", "https://edge.medcom.id/live-edge/smil:metro.smil/playlist.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/MetroTV_2010.svg/512px-MetroTV_2010.svg.png", 11),
-    VerifiedChannel("tvri_nasional", "TVRI Nasional", "https://ott-balancer.tvri.go.id/live/eds/Nasional/hls/Nasional.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/TVRI_2019.svg/512px-TVRI_2019.svg.png", 12),
-    VerifiedChannel("tvri_world", "TVRI World", "https://ott-balancer.tvri.go.id/live/eds/TVRIWorld/hls/TVRIWorld.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/TVRI_World_2019.svg/512px-TVRI_World_2019.svg.png", 13),
-    VerifiedChannel("tvri_dki", "TVRI Jakarta", "https://ott-balancer.tvri.go.id/live/eds/DKI/hls/DKI.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/TVRI_Jakarta.svg/512px-TVRI_Jakarta.svg.png", 14),
-    VerifiedChannel("tvri_jabar", "TVRI Jawa Barat", "https://ott-balancer.tvri.go.id/live/eds/Jabar/hls/Jabar.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/TVRI_Jawa_Barat.svg/512px-TVRI_Jawa_Barat.svg.png", 15),
-    VerifiedChannel("tvri_jatim", "TVRI Jawa Timur", "https://ott-balancer.tvri.go.id/live/eds/Jatim/hls/Jatim.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/TVRI_Jawa_Timur.svg/512px-TVRI_Jawa_Timur.svg.png", 16),
-    VerifiedChannel("daai_tv", "DAAI TV HD", "https://pull.daaiplus.com/live-DAAIPLUS/live-DAAIPLUS_HD.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/DAAI_TV_logo.svg/512px-DAAI_TV_logo.svg.png", 17),
-    VerifiedChannel("garuda_tv", "Garuda TV", "https://op-flashcon-digdayahd-1.dens.tv/h/h10/01.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/Garuda_TV.png/512px-Garuda_TV.png", 18),
-    VerifiedChannel("magna_channel", "MAGNA Channel", "https://edge.medcom.id/live-edge/smil:magna.smil/chunklist_w521170343_b1128000_sleng.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/Magna_Channel.svg/512px-Magna_Channel.svg.png", 19),
-    VerifiedChannel("bn_channel", "BN Channel", "https://flv.intechmedia.net/live/ch112.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/id/thumb/2/25/BN_Channel.png/512px-BN_Channel.png", 20),
-    VerifiedChannel("jawapos_tv", "Jawa Pos TV", "http://122.248.43.242:1935/JAWAPOSTVJKT/_definst_/myStream/playlist.m3u8", "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Jawa_Pos_TV_logo.svg/512px-Jawa_Pos_TV_logo.svg.png", 21),
-    VerifiedChannel("banjar_tv", "Banjar TV", "https://banjartv.siar.us/banjartv/live/playlist.m3u8", "Nasional", "https://banjartv.siar.us/assets/img/logo.png", 22),
-    VerifiedChannel("caruban_tv", "Caruban TV", "https://stream.carubantv.id/hls/0/stream.m3u8", "Nasional", "https://i.postimg.cc/bJpyzPbB/afbtv.png", 23),
-    VerifiedChannel("dhoho_tv", "Dhoho TV", "https://dhohotv.siar.us/dhohotv/live/playlist.m3u8", "Nasional", "https://dhohotv.siar.us/assets/img/logo.png", 24),
+    // === NASIONAL (TV Populer Indonesia) ===
+    VerifiedChannel(
+        id = "gtv",
+        name = "GTV HD",
+        streamUrl = "http://hometv.biz.id:80/play/-3G1b2ud-O59f7x_ScusEw",
+        backupUrl = "http://hometv.biz.id:80/play/KrVYNUtc63yvQKQCwg8miHqQ4_EdcTLriwuH5Hq6Ngh6Cq6OmchTWJed4cF8PLO8",
+        genre = "Nasional",
+        logoUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/GTV_%28Indonesia%29_2017_logo.svg/512px-GTV_%28Indonesia%29_2017_logo.svg.png",
+        number = 1
+    ),
+    VerifiedChannel(
+        id = "mnctv",
+        name = "MNC TV HD",
+        streamUrl = "http://hometv.biz.id:80/play/1fxSpuJb44YPc2Gs5H_nOw",
+        backupUrl = "http://hometv.biz.id:80/play/KrVYNUtc63yvQKQCwg8miHqQ4_EdcTLriwuH5Hq6NgicGCOcnuwUnXooTDu7lj6R",
+        genre = "Nasional",
+        logoUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/MNCTV_logo_2020.svg/512px-MNCTV_logo_2020.svg.png",
+        number = 2
+    ),
+    VerifiedChannel(
+        id = "rcti",
+        name = "RCTI HD",
+        streamUrl = "http://hometv.biz.id:80/play/FgEpb2OcjoJ1Zpi78OicBw",
+        backupUrl = "http://hometv.biz.id:80/play/KrVYNUtc63yvQKQCwg8miHqQ4_EdcTLriwuH5Hq6Ngj0fHpRbhNUS-OX-_Lp8lZi",
+        genre = "Nasional",
+        logoUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/RCTI_2015.svg/512px-RCTI_2015.svg.png",
+        number = 3
+    ),
+    VerifiedChannel(
+        id = "sctv",
+        name = "SCTV HD",
+        streamUrl = "http://hometv.biz.id:80/play/ncQ61p33CjA2O64BU5S1Yw",
+        backupUrl = "http://filex.me:8080/akkvdGtMUWkvVnMvaWx3V2hXa2NacE9Ra0g0dTlhc29keDE1OHU4Vm0zV3MvcU5CUjJCSWZTR1FJRnF2VXEyQQ",
+        genre = "Nasional",
+        logoUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/SCTV_logo_2005.svg/512px-SCTV_logo_2005.svg.png",
+        number = 4
+    ),
+    VerifiedChannel(
+        id = "indosiar",
+        name = "Indosiar HD",
+        streamUrl = "http://hometv.biz.id:80/play/0r_OP_D-Uq2ONHZBG7-N4g",
+        backupUrl = "http://filex.me:8080/akkvdGtMUWkvVnMvaWx3V2hXa2NaZ0x0ZXFPbysvMVBvYjc1eXFMemc1a3UxOWR6NmYxUTllMi80N1IzM2tGWQ",
+        genre = "Nasional",
+        logoUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/Indosiar_logo_2015.svg/512px-Indosiar_logo_2015.svg.png",
+        number = 5
+    ),
+    VerifiedChannel(
+        id = "inews",
+        name = "iNews HD",
+        streamUrl = "https://live.i-news.tv/hls/1/stream.m3u8",
+        backupUrl = "http://hometv.biz.id:80/play/qOz6vuu0J_sIrtobe3YdWg",
+        genre = "Nasional",
+        logoUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/INews_2023.svg/512px-INews_2023.svg.png",
+        number = 6
+    ),
+    VerifiedChannel("transtv", "Trans TV HD", "https://green-night-d2b4.iontv.workers.dev/transtv.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Trans_TV_2013.svg/512px-Trans_TV_2013.svg.png", 7),
+    VerifiedChannel("trans7", "Trans7 HD", "https://green-night-d2b4.iontv.workers.dev/trans7.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Trans7_logo_2013.svg/512px-Trans7_logo_2013.svg.png", 8),
+    VerifiedChannel("antv", "ANTV HD", "https://op-flashcon-digdayahd-1.dens.tv/h/h235/01.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/ANTV_logo_2017.svg/512px-ANTV_logo_2017.svg.png", 9),
+    VerifiedChannel("kompastv", "Kompas TV HD", "https://op-flashcon-digdayahd-1.dens.tv/s/s104/index.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/Kompas_TV_2018.svg/512px-Kompas_TV_2018.svg.png", 10),
+    VerifiedChannel("rtv", "RTV HD", "https://rtvstream.rtv.co.id:4555/hls/rtv.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/RTV_logo.svg/512px-RTV_logo.svg.png", 11),
+    VerifiedChannel("metrotv", "Metro TV HD", "https://edge.medcom.id/live-edge/smil:metro.smil/playlist.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/MetroTV_2010.svg/512px-MetroTV_2010.svg.png", 12),
+    VerifiedChannel("tvri_nasional", "TVRI Nasional", "https://ott-balancer.tvri.go.id/live/eds/Nasional/hls/Nasional.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/TVRI_2019.svg/512px-TVRI_2019.svg.png", 13),
+    VerifiedChannel("tvri_world", "TVRI World", "https://ott-balancer.tvri.go.id/live/eds/TVRIWorld/hls/TVRIWorld.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/TVRI_World_2019.svg/512px-TVRI_World_2019.svg.png", 14),
+    VerifiedChannel("tvri_dki", "TVRI Jakarta", "https://ott-balancer.tvri.go.id/live/eds/DKI/hls/DKI.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/TVRI_Jakarta.svg/512px-TVRI_Jakarta.svg.png", 15),
+    VerifiedChannel("tvri_jabar", "TVRI Jawa Barat", "https://ott-balancer.tvri.go.id/live/eds/Jabar/hls/Jabar.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/TVRI_Jawa_Barat.svg/512px-TVRI_Jawa_Barat.svg.png", 16),
+    VerifiedChannel("tvri_jatim", "TVRI Jawa Timur", "https://ott-balancer.tvri.go.id/live/eds/Jatim/hls/Jatim.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/TVRI_Jawa_Timur.svg/512px-TVRI_Jawa_Timur.svg.png", 17),
+    VerifiedChannel("daai_tv", "DAAI TV HD", "https://pull.daaiplus.com/live-DAAIPLUS/live-DAAIPLUS_HD.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/DAAI_TV_logo.svg/512px-DAAI_TV_logo.svg.png", 18),
+    VerifiedChannel("garuda_tv", "Garuda TV", "https://op-flashcon-digdayahd-1.dens.tv/h/h10/01.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/Garuda_TV.png/512px-Garuda_TV.png", 19),
+    VerifiedChannel("magna_channel", "MAGNA Channel", "https://edge.medcom.id/live-edge/smil:magna.smil/chunklist_w521170343_b1128000_sleng.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/Magna_Channel.svg/512px-Magna_Channel.svg.png", 20),
+    VerifiedChannel("bn_channel", "BN Channel", "https://flv.intechmedia.net/live/ch112.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/id/thumb/2/25/BN_Channel.png/512px-BN_Channel.png", 21),
+    VerifiedChannel("jawapos_tv", "Jawa Pos TV", "http://122.248.43.242:1935/JAWAPOSTVJKT/_definst_/myStream/playlist.m3u8", null, "Nasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Jawa_Pos_TV_logo.svg/512px-Jawa_Pos_TV_logo.svg.png", 22),
+    VerifiedChannel("banjar_tv", "Banjar TV", "https://banjartv.siar.us/banjartv/live/playlist.m3u8", null, "Nasional", "https://banjartv.siar.us/assets/img/logo.png", 23),
+    VerifiedChannel("caruban_tv", "Caruban TV", "https://stream.carubantv.id/hls/0/stream.m3u8", null, "Nasional", "https://i.postimg.cc/bJpyzPbB/afbtv.png", 24),
+    VerifiedChannel("dhoho_tv", "Dhoho TV", "https://dhohotv.siar.us/dhohotv/live/playlist.m3u8", null, "Nasional", "https://dhohotv.siar.us/assets/img/logo.png", 25),
 
     // === INTERNASIONAL ===
-    VerifiedChannel("nhk_world", "NHK World Japan HD", "https://media-tyo.hls.nhkworld.jp/hls/w/live/master.m3u8", "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/NHK_World-Japan.svg/512px-NHK_World-Japan.svg.png", 25),
-    VerifiedChannel("cna_asia", "CNA (Channel News Asia)", "https://amg01082-cna-amg01082c1-rlaxx-us-11304.playouts.now.amagi.tv/playlist.m3u8", "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/CNA_%28TV_network%29_logo.svg/512px-CNA_%28TV_network%29_logo.svg.png", 26),
-    VerifiedChannel("bloomberg", "Bloomberg Originals HD", "https://bloomberg.com/media-manifest/streams/qt.m3u8", "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Bloomberg_Television_logo.svg/512px-Bloomberg_Television_logo.svg.png", 27),
-    VerifiedChannel("dw_english", "DW English HD", "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8", "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Deutsche_Welle_Logo.svg/512px-Deutsche_Welle_Logo.svg.png", 28),
-    VerifiedChannel("dw_deutsch", "DW Deutsch HD", "https://dwamdstream104.akamaized.net/hls/live/2015530/dwstream104/index.m3u8", "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Deutsche_Welle_Logo.svg/512px-Deutsche_Welle_Logo.svg.png", 29),
-    VerifiedChannel("arirang_tv", "Arirang TV Korea HD", "https://amdlive-ch01-ctnd-com.akamaized.net/arirang_1ch/smil:arirang_1ch.smil/playlist.m3u8", "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/Arirang_TV_logo.svg/512px-Arirang_TV_logo.svg.png", 30),
-    VerifiedChannel("trt_world", "TRT World HD", "https://tv-trtworld.medya.trt.com.tr/master.m3u8", "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/TRT_World_logo.svg/512px-TRT_World_logo.svg.png", 31),
+    VerifiedChannel("nhk_world", "NHK World Japan HD", "https://media-tyo.hls.nhkworld.jp/hls/w/live/master.m3u8", null, "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/NHK_World-Japan.svg/512px-NHK_World-Japan.svg.png", 26),
+    VerifiedChannel("cna_asia", "CNA (Channel News Asia)", "https://amg01082-cna-amg01082c1-rlaxx-us-11304.playouts.now.amagi.tv/playlist.m3u8", null, "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/CNA_%28TV_network%29_logo.svg/512px-CNA_%28TV_network%29_logo.svg.png", 27),
+    VerifiedChannel("bloomberg", "Bloomberg Originals HD", "https://bloomberg.com/media-manifest/streams/qt.m3u8", null, "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Bloomberg_Television_logo.svg/512px-Bloomberg_Television_logo.svg.png", 28),
+    VerifiedChannel("dw_english", "DW English HD", "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8", null, "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Deutsche_Welle_Logo.svg/512px-Deutsche_Welle_Logo.svg.png", 29),
+    VerifiedChannel("dw_deutsch", "DW Deutsch HD", "https://dwamdstream104.akamaized.net/hls/live/2015530/dwstream104/index.m3u8", null, "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Deutsche_Welle_Logo.svg/512px-Deutsche_Welle_Logo.svg.png", 30),
+    VerifiedChannel("arirang_tv", "Arirang TV Korea HD", "https://amdlive-ch01-ctnd-com.akamaized.net/arirang_1ch/smil:arirang_1ch.smil/playlist.m3u8", null, "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/Arirang_TV_logo.svg/512px-Arirang_TV_logo.svg.png", 31),
+    VerifiedChannel("trt_world", "TRT World HD", "https://tv-trtworld.medya.trt.com.tr/master.m3u8", null, "Internasional", "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/TRT_World_logo.svg/512px-TRT_World_logo.svg.png", 32),
 
     // === HIBURAN & OLAHRAGA ===
-    VerifiedChannel("bein_sports", "beIN Sports XTRA", "https://bein-xtra-bein.amagi.tv/playlist.m3u8", "Hiburan", "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/BeIN_Sports_logo.svg/512px-BeIN_Sports_logo.svg.png", 32),
-    VerifiedChannel("fox_sports", "FOX Sports HD", "https://d1jzu95oc8fgt3.cloudfront.net/FOX_Sports.m3u8", "Hiburan", "https://upload.wikimedia.org/wikipedia/commons/thumb/b/be/Fox_Sports_logo.svg/512px-Fox_Sports_logo.svg.png", 33),
-    VerifiedChannel("cbs_sports", "CBS Sports HQ", "https://stitcher-ipv4.pluto.tv/v1/stitch/embed/hls/channel/5d8a98f1f7d451cb5fa0b463/master.m3u8", "Hiburan", "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/CBS_Sports_HQ_logo.svg/512px-CBS_Sports_HQ_logo.svg.png", 34),
-    VerifiedChannel("redbull_tv", "Red Bull TV HD", "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8", "Hiburan", "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Red_Bull_TV_logo.svg/512px-Red_Bull_TV_logo.svg.png", 35),
-    VerifiedChannel("bbc_earth", "BBC Earth HD", "https://amg00793-amg00793c6-xumo-us-2669.playouts.now.amagi.tv/BBCStudios-BBCEarthA-hls/playlist.m3u8", "Hiburan", "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/BBC_Earth_logo.svg/512px-BBC_Earth_logo.svg.png", 36),
-    VerifiedChannel("kdrama_plus", "K-Drama+ 24/7", "https://stream-us-east-1.getpublica.com/playlist.m3u8?network_id=425", "Hiburan", "https://i.imgur.com/xO8vG4u.png", 37),
-    VerifiedChannel("kmovies", "NEW KMOVIES HD", "https://stream-us-east-1.getpublica.com/playlist.m3u8?network_id=7737", "Hiburan", "https://i.imgur.com/8QG3X7T.png", 38),
-    VerifiedChannel("action_movies", "Movies Action HD", "https://shd-amg-fast.edgenextcdn.net/tx011/playlist.m3u8", "Hiburan", "https://i.imgur.com/Y3aA5W4.png", 39),
-    VerifiedChannel("thriller_movies", "Movies Thriller HD", "https://shd-amg-fast.edgenextcdn.net/tx012/playlist.m3u8", "Hiburan", "https://i.imgur.com/2s4PsmU.png", 40),
-    VerifiedChannel("anime_retro", "Anime Retro Channel", "https://2-fss-2.streamhoster.com/pl_138/205510-3094608-1/playlist.m3u8", "Hiburan", "https://i.imgur.com/5XhFp7Z.png", 41),
+    VerifiedChannel("bein_sports", "beIN Sports XTRA", "https://bein-xtra-bein.amagi.tv/playlist.m3u8", null, "Hiburan", "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/BeIN_Sports_logo.svg/512px-BeIN_Sports_logo.svg.png", 33),
+    VerifiedChannel("fox_sports", "FOX Sports HD", "https://d1jzu95oc8fgt3.cloudfront.net/FOX_Sports.m3u8", null, "Hiburan", "https://upload.wikimedia.org/wikipedia/commons/thumb/b/be/Fox_Sports_logo.svg/512px-Fox_Sports_logo.svg.png", 34),
+    VerifiedChannel("cbs_sports", "CBS Sports HQ", "https://stitcher-ipv4.pluto.tv/v1/stitch/embed/hls/channel/5d8a98f1f7d451cb5fa0b463/master.m3u8", null, "Hiburan", "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/CBS_Sports_HQ_logo.svg/512px-CBS_Sports_HQ_logo.svg.png", 35),
+    VerifiedChannel("redbull_tv", "Red Bull TV HD", "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8", null, "Hiburan", "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Red_Bull_TV_logo.svg/512px-Red_Bull_TV_logo.svg.png", 36),
+    VerifiedChannel("bbc_earth", "BBC Earth HD", "https://amg00793-amg00793c6-xumo-us-2669.playouts.now.amagi.tv/BBCStudios-BBCEarthA-hls/playlist.m3u8", null, "Hiburan", "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/BBC_Earth_logo.svg/512px-BBC_Earth_logo.svg.png", 37),
+    VerifiedChannel("kdrama_plus", "K-Drama+ 24/7", "https://stream-us-east-1.getpublica.com/playlist.m3u8?network_id=425", null, "Hiburan", "https://i.imgur.com/xO8vG4u.png", 38),
+    VerifiedChannel("kmovies", "NEW KMOVIES HD", "https://stream-us-east-1.getpublica.com/playlist.m3u8?network_id=7737", null, "Hiburan", "https://i.imgur.com/8QG3X7T.png", 39),
+    VerifiedChannel("action_movies", "Movies Action HD", "https://shd-amg-fast.edgenextcdn.net/tx011/playlist.m3u8", null, "Hiburan", "https://i.imgur.com/Y3aA5W4.png", 40),
+    VerifiedChannel("thriller_movies", "Movies Thriller HD", "https://shd-amg-fast.edgenextcdn.net/tx012/playlist.m3u8", null, "Hiburan", "https://i.imgur.com/2s4PsmU.png", 41),
+    VerifiedChannel("anime_retro", "Anime Retro Channel", "https://2-fss-2.streamhoster.com/pl_138/205510-3094608-1/playlist.m3u8", null, "Hiburan", "https://i.imgur.com/5XhFp7Z.png", 42),
 
     // === KIDS ===
-    VerifiedChannel("disney_channel", "Disney Channel HD", "http://15.204.246.24:8080/DisneyHD/index.m3u8", "Kids", "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/2019_Disney_Channel_logo.svg/512px-2019_Disney_Channel_logo.svg.png", 42),
-    VerifiedChannel("disney_junior", "Disney Junior HD", "http://190.93.224.42/DISNEY-JR/index.m3u8", "Kids", "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Disney_Junior_logo.svg/512px-Disney_Junior_logo.svg.png", 43),
+    VerifiedChannel("disney_channel", "Disney Channel HD", "http://15.204.246.24:8080/DisneyHD/index.m3u8", null, "Kids", "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/2019_Disney_Channel_logo.svg/512px-2019_Disney_Channel_logo.svg.png", 43),
+    VerifiedChannel("disney_junior", "Disney Junior HD", "http://190.93.224.42/DISNEY-JR/index.m3u8", null, "Kids", "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Disney_Junior_logo.svg/512px-Disney_Junior_logo.svg.png", 44),
 
     // === RELIGI ===
-    VerifiedChannel("ahsan_tv", "Ahsan TV", "https://5bf7b725107e5.streamlock.net/ahsantv/ahsantv/playlist.m3u8", "Religi", "https://i.imgur.com/dZdUbYd.png", 44),
-    VerifiedChannel("alwafa_tv", "Alwafa Tarim TV", "https://ammedia.siar.us/ammedia/live/playlist.m3u8", "Religi", "https://ammedia.siar.us/assets/img/logo.png", 45),
-    VerifiedChannel("tawaf_tv", "Tawaf TV", "https://tvstreamcast.com/tawaftv.m3u8", "Religi", "https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Tawaf_TV.png/512px-Tawaf_TV.png", 46),
-    VerifiedChannel("salam_tv", "Salam TV", "https://live.salamtelevisi.com/hls/0/stream.m3u8", "Religi", "https://live.salamtelevisi.com/wp-content/uploads/2021/04/cropped-Logo-Salam-TV-1-1.png", 47)
+    VerifiedChannel("ahsan_tv", "Ahsan TV", "https://5bf7b725107e5.streamlock.net/ahsantv/ahsantv/playlist.m3u8", null, "Religi", "https://i.imgur.com/dZdUbYd.png", 45),
+    VerifiedChannel("alwafa_tv", "Alwafa Tarim TV", "https://ammedia.siar.us/ammedia/live/playlist.m3u8", null, "Religi", "https://ammedia.siar.us/assets/img/logo.png", 46),
+    VerifiedChannel("tawaf_tv", "Tawaf TV", "https://tvstreamcast.com/tawaftv.m3u8", null, "Religi", "https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Tawaf_TV.png/512px-Tawaf_TV.png", 47),
+    VerifiedChannel("salam_tv", "Salam TV", "https://live.salamtelevisi.com/hls/0/stream.m3u8", null, "Religi", "https://live.salamtelevisi.com/wp-content/uploads/2021/04/cropped-Logo-Salam-TV-1-1.png", 48)
 )
 
 @OptIn(UnstableApi::class)
@@ -141,6 +192,7 @@ fun LiveTvPortalScreen(
     var currentFilter by remember { mutableStateOf(LiveTvCategory.SEMUA) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedChannel by remember { mutableStateOf<VerifiedChannel?>(VERIFIED_CHANNELS.first()) }
+    var useBackupServer by remember { mutableStateOf(false) }
     var isStreamLoading by remember { mutableStateOf(false) }
     var streamError by remember { mutableStateOf<String?>(null) }
     var reloadTrigger by remember { mutableIntStateOf(0) }
@@ -149,10 +201,13 @@ fun LiveTvPortalScreen(
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
             .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(15000)
+            .setConnectTimeoutMs(20000)
+            .setReadTimeoutMs(20000)
 
-        val mediaSourceFactory = DefaultMediaSourceFactory(context)
+        val extractorsFactory = DefaultExtractorsFactory()
+            .setConstantBitrateSeekingEnabled(true)
+
+        val mediaSourceFactory = DefaultMediaSourceFactory(context, extractorsFactory)
             .setDataSourceFactory(httpDataSourceFactory)
 
         ExoPlayer.Builder(context)
@@ -167,8 +222,16 @@ fun LiveTvPortalScreen(
             override fun onPlayerError(error: PlaybackException) {
                 error.printStackTrace()
                 isStreamLoading = false
-                streamError = "Gagal memuat siaran live. Coba lagi atau pilih saluran lain."
+
+                // If primary server failed and backup is available, automatically switch to backup server!
+                val ch = selectedChannel
+                if (!useBackupServer && ch?.backupUrl != null) {
+                    useBackupServer = true
+                } else {
+                    streamError = "Gagal memuat siaran live. Coba server cadangan atau pilih saluran lain."
+                }
             }
+
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
                     Player.STATE_READY -> {
@@ -195,17 +258,26 @@ fun LiveTvPortalScreen(
     }
 
     // Play selected channel stream
-    LaunchedEffect(selectedChannel, reloadTrigger) {
+    LaunchedEffect(selectedChannel, useBackupServer, reloadTrigger) {
         val ch = selectedChannel ?: return@LaunchedEffect
         isStreamLoading = true
         streamError = null
         try {
-            val mediaItemBuilder = MediaItem.Builder().setUri(ch.streamUrl)
-            if (ch.streamUrl.contains(".mpd")) {
-                mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
-            } else if (ch.streamUrl.contains(".m3u8")) {
-                mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+            val targetUrl = if (useBackupServer && !ch.backupUrl.isNullOrBlank()) ch.backupUrl else ch.streamUrl
+            val mediaItemBuilder = MediaItem.Builder().setUri(targetUrl)
+
+            when {
+                targetUrl.contains(".mpd") -> {
+                    mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
+                }
+                targetUrl.contains(".m3u8") -> {
+                    mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+                }
+                targetUrl.contains("/play/") || targetUrl.contains("filex.me") || targetUrl.contains(".ts") -> {
+                    mediaItemBuilder.setMimeType(MimeTypes.VIDEO_MP2T)
+                }
             }
+
             exoPlayer.stop()
             exoPlayer.setMediaItem(mediaItemBuilder.build())
             exoPlayer.prepare()
@@ -350,7 +422,7 @@ fun LiveTvPortalScreen(
                             CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp)
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Menghubungkan siaran...",
+                                text = if (useBackupServer) "Menghubungkan ke Server Cadangan..." else "Menghubungkan siaran...",
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium
@@ -383,27 +455,48 @@ fun LiveTvPortalScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Spacer(modifier = Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFF2563EB))
-                                    .clickable { reloadTrigger++ }
-                                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Retry",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = "Coba Lagi",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF2563EB))
+                                        .clickable { reloadTrigger++ }
+                                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Retry",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = "Coba Lagi",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                if (selectedChannel?.backupUrl != null) {
+                                    Row(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFF059669))
+                                            .clickable { useBackupServer = !useBackupServer }
+                                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = if (useBackupServer) "Ganti Server 1" else "Ganti Server 2",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -433,6 +526,46 @@ fun LiveTvPortalScreen(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
+                        if (ch.backupUrl != null) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (useBackupServer) "• SVR 2" else "• SVR 1",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // Server Switcher pill button (top-right) if channel has backup URL
+                selectedChannel?.let { ch ->
+                    if (ch.backupUrl != null) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(10.dp)
+                                .clip(RoundedCornerShape(100.dp))
+                                .background(Color(0xCC1E293B))
+                                .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(100.dp))
+                                .clickable { useBackupServer = !useBackupServer }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Switch Server",
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = if (useBackupServer) "Server 2 (Cadangan)" else "Server 1",
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
@@ -461,7 +594,7 @@ fun LiveTvPortalScreen(
                     Box(modifier = Modifier.weight(1f)) {
                         if (searchQuery.isEmpty()) {
                             Text(
-                                text = "Cari saluran (contoh: GTV, Trans, Disney, beIN)...",
+                                text = "Cari saluran (contoh: GTV, SCTV, Disney, beIN)...",
                                 color = TextMuted,
                                 fontSize = 12.sp
                             )
@@ -615,7 +748,12 @@ fun LiveTvPortalScreen(
                                     RoundedCornerShape(12.dp)
                                 )
                                 .background(if (isCurrent) SurfaceActive else SurfaceElevated)
-                                .clickable { selectedChannel = ch }
+                                .clickable {
+                                    if (selectedChannel?.id != ch.id) {
+                                        useBackupServer = false
+                                        selectedChannel = ch
+                                    }
+                                }
                                 .padding(10.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -660,7 +798,7 @@ fun LiveTvPortalScreen(
                                             )
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text(
-                                                text = "PLAYING",
+                                                text = if (useBackupServer) "LIVE • SVR 2" else "PLAYING",
                                                 color = Color(0xFF22C55E),
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.ExtraBold
