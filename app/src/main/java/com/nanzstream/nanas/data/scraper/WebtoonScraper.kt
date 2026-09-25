@@ -72,6 +72,44 @@ object WebtoonScraper {
         items
     }
 
+    suspend fun getSchedule(daySlug: String): List<MediaItem> = withContext(Dispatchers.IO) {
+        val targetUrl = "$BASE_URL/id/originals/$daySlug"
+        val html = fetchHtml(targetUrl) ?: return@withContext getHome()
+        val doc = Jsoup.parse(html)
+        val items = mutableListOf<MediaItem>()
+
+        doc.select("a.link._originals_title_a, a[href*='title_no=']").forEach { a ->
+            val href = a.attr("href")
+            val titleNo = a.attr("data-title-no").ifEmpty {
+                Regex("""title_no=(\d+)""").find(href)?.groupValues?.get(1) ?: ""
+            }
+            if (titleNo.isEmpty() || items.any { it.id == titleNo }) return@forEach
+
+            val title = a.selectFirst("strong.title")?.text()?.trim()
+                ?: a.selectFirst(".subj")?.text()?.trim() ?: ""
+            val img = a.selectFirst("img")?.attr("src") ?: ""
+            val genre = a.selectFirst(".genre")?.text()?.trim() ?: "Webtoon"
+            val badge = a.selectFirst(".badge_up2")?.text()?.trim() ?: genre
+
+            if (title.isNotBlank()) {
+                val fullUrl = if (href.startsWith("http")) href else "$BASE_URL$href"
+                items.add(
+                    MediaItem(
+                        id = titleNo,
+                        title = title,
+                        category = CategoryType.MANGA,
+                        thumbnail = img,
+                        url = fullUrl,
+                        slug = titleNo,
+                        badge = badge,
+                        genres = listOf(genre)
+                    )
+                )
+            }
+        }
+        if (items.isEmpty()) getHome() else items
+    }
+
     suspend fun search(query: String): List<MediaItem> = withContext(Dispatchers.IO) {
         val targetUrl = "$BASE_URL/id/search?keyword=${URLEncoder.encode(query, "UTF-8")}"
         val html = fetchHtml(targetUrl) ?: return@withContext emptyList()

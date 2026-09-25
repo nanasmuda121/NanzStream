@@ -42,7 +42,10 @@ import com.nanzstream.nanas.NanzStreamApp
 import com.nanzstream.nanas.data.model.CategoryType
 import com.nanzstream.nanas.data.model.MediaItem
 import com.nanzstream.nanas.data.repository.MediaRepository
+import com.nanzstream.nanas.ui.components.DayScheduleBar
 import com.nanzstream.nanas.ui.components.MediaItemCard
+import com.nanzstream.nanas.ui.components.SCHEDULE_DAYS
+import com.nanzstream.nanas.ui.components.getTodayScheduleIndex
 import com.nanzstream.nanas.ui.theme.*
 import java.io.File
 
@@ -61,21 +64,32 @@ fun KomikPortalScreen(
     modifier: Modifier = Modifier
 ) {
     var currentTab by remember { mutableStateOf(KomikTab.JADWAL) }
+    val todayIndex = remember { getTodayScheduleIndex() }
+    var selectedDayIndex by remember { mutableIntStateOf(todayIndex) }
+    var scheduleCache by remember { mutableStateOf<Map<Int, List<MediaItem>>>(emptyMap()) }
     var komikList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var searchResults by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
     val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(currentTab) {
-        if (currentTab != KomikTab.SEARCH && komikList.isEmpty()) {
-            isLoading = true
-            try {
-                komikList = repository.getMangaHome()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                isLoading = false
+    LaunchedEffect(currentTab, selectedDayIndex) {
+        if (currentTab == KomikTab.JADWAL) {
+            val cached = scheduleCache[selectedDayIndex]
+            if (cached != null && cached.isNotEmpty()) {
+                komikList = cached
+            } else {
+                isLoading = true
+                try {
+                    val daySlug = SCHEDULE_DAYS[selectedDayIndex].webtoonSlug
+                    val items = repository.getWebtoonSchedule(daySlug)
+                    komikList = items
+                    scheduleCache = scheduleCache + (selectedDayIndex to items)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    isLoading = false
+                }
             }
         }
     }
@@ -234,29 +248,37 @@ fun KomikPortalScreen(
         ) {
             when (currentTab) {
                 KomikTab.JADWAL -> {
-                    if (isLoading && komikList.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
-                        }
-                    } else {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(komikList) { item ->
-                                MediaItemCard(
-                                    item = item,
-                                    onClick = { onKomikClick(item) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(185.dp)
-                                )
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        DayScheduleBar(
+                            selectedDayIndex = selectedDayIndex,
+                            onSelectDay = { selectedDayIndex = it },
+                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        )
+
+                        if (isLoading && komikList.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
+                            }
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                items(komikList) { item ->
+                                    MediaItemCard(
+                                        item = item,
+                                        onClick = { onKomikClick(item) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(185.dp)
+                                    )
+                                }
                             }
                         }
                     }

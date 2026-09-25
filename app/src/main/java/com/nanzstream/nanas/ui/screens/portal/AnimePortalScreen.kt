@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.FlashOn
@@ -33,11 +34,14 @@ import androidx.compose.ui.unit.sp
 import com.nanzstream.nanas.data.model.CategoryType
 import com.nanzstream.nanas.data.model.MediaItem
 import com.nanzstream.nanas.data.repository.MediaRepository
+import com.nanzstream.nanas.ui.components.DayScheduleBar
 import com.nanzstream.nanas.ui.components.MediaItemCard
+import com.nanzstream.nanas.ui.components.getTodayScheduleIndex
 import com.nanzstream.nanas.ui.theme.*
 
 private enum class AnimeTab(val title: String, val icon: ImageVector) {
     TERBARU("Terbaru", Icons.Default.FlashOn),
+    JADWAL("Jadwal", Icons.Default.CalendarToday),
     POPULER("Populer", Icons.Default.Star),
     SEARCH("Cari", Icons.Default.Search)
 }
@@ -50,6 +54,9 @@ fun AnimePortalScreen(
     modifier: Modifier = Modifier
 ) {
     var currentTab by remember { mutableStateOf(AnimeTab.TERBARU) }
+    val todayIndex = remember { getTodayScheduleIndex() }
+    var selectedDayIndex by remember { mutableIntStateOf(todayIndex) }
+    var scheduleList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var latestList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var popularList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var searchResults by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
@@ -57,7 +64,7 @@ fun AnimePortalScreen(
     var isLoading by remember { mutableStateOf(true) }
     val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(currentTab) {
+    LaunchedEffect(currentTab, selectedDayIndex) {
         when (currentTab) {
             AnimeTab.TERBARU -> {
                 if (latestList.isEmpty()) {
@@ -69,6 +76,16 @@ fun AnimePortalScreen(
                     } finally {
                         isLoading = false
                     }
+                }
+            }
+            AnimeTab.JADWAL -> {
+                isLoading = true
+                try {
+                    scheduleList = repository.getAnimeSchedule(selectedDayIndex)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    isLoading = false
                 }
             }
             AnimeTab.POPULER -> {
@@ -188,7 +205,7 @@ fun AnimePortalScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable { currentTab = tab }
-                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(
@@ -265,6 +282,41 @@ fun AnimePortalScreen(
                                         .fillMaxWidth()
                                         .height(185.dp)
                                 )
+                            }
+                        }
+                    }
+                AnimeTab.JADWAL -> {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        DayScheduleBar(
+                            selectedDayIndex = selectedDayIndex,
+                            onSelectDay = { selectedDayIndex = it },
+                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        )
+
+                        if (isLoading && scheduleList.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
+                            }
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                items(scheduleList) { item ->
+                                    MediaItemCard(
+                                        item = item,
+                                        onClick = { onAnimeClick(item) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(185.dp)
+                                    )
+                                }
                             }
                         }
                     }
