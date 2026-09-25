@@ -208,9 +208,6 @@ fun VideoPlayerScreen(
                 )
             )
 
-            // Initial server setup
-            val firstServer = res?.servers?.firstOrNull()
-            selectedServer = firstServer
         } catch (e: Exception) {
             e.printStackTrace()
             isLoading = false
