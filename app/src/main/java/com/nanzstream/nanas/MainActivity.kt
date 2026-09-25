@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
                                 onBackToPortal = { navController.popBackStack() },
                                 onKomikClick = { item ->
                                     navController.navigate(
-                                        Screen.Detail.createRoute("manga", item.url.ifEmpty { item.slug ?: item.id })
+                                        Screen.Detail.createRoute("manga", item.url.orEmpty().ifEmpty { item.slug ?: item.id })
                                     )
                                 },
                                 onReadOfflineChapter = { mangaId, chapterId, chapterTitle ->
