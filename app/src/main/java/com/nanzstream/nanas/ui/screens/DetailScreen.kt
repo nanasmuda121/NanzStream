@@ -360,14 +360,19 @@ fun DetailScreen(
 
         // 4. Content List Header (Episodes or Chapters)
         item {
-            val isMovie = currentDetail.category != CategoryType.MANGA && (currentDetail.title.contains("Movie", ignoreCase = true) || (currentDetail.episodes.size <= 1 && currentDetail.episodes.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
-            val listTitle = if (currentDetail.category == CategoryType.MANGA) "Daftar Chapter" else if (isMovie) "Film / Movie" else "Pilihan Episode"
-            val countText = if (currentDetail.category == CategoryType.MANGA) {
-                "${currentDetail.chapters.size} Chapter"
-            } else if (isMovie) {
-                "Full Movie"
-            } else {
-                "${currentDetail.episodes.size} Episode"
+            val isMovie = currentDetail.category != CategoryType.MANGA && (currentDetail.category == CategoryType.MOVIES || currentDetail.title.contains("Movie", ignoreCase = true) || (currentDetail.episodes.size <= 1 && currentDetail.episodes.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
+            val isYouTube = currentDetail.category == CategoryType.YOUTUBE
+            val listTitle = when {
+                currentDetail.category == CategoryType.MANGA -> "Daftar Chapter"
+                isMovie -> "Film / Movie"
+                isYouTube -> "Daftar Video"
+                else -> "Pilihan Episode"
+            }
+            val countText = when {
+                currentDetail.category == CategoryType.MANGA -> "${currentDetail.chapters.size} Chapter"
+                isMovie -> "Full Movie"
+                isYouTube -> "${currentDetail.episodes.size} Video"
+                else -> "${currentDetail.episodes.size} Episode"
             }
 
             Row(

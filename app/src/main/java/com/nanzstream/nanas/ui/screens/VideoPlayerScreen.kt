@@ -242,7 +242,7 @@ fun VideoPlayerScreen(
                     autoRetryCount = 0
                 } else {
                     isLoading = false
-                    streamError = "Gagal memutar video. Silakan coba lagi atau pilih server lain."
+                    streamError = "Gagal memutar video. Silakan coba beberapa saat lagi."
                 }
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -298,7 +298,13 @@ fun VideoPlayerScreen(
             }
 
             if (chosenServerUrl.isNotBlank()) {
-                val defaultReferer = if (category == CategoryType.ANIME) "https://desustream.net/" else "https://anichin.ro/"
+                val defaultReferer = when (category) {
+                    CategoryType.ANIME -> "https://desustream.net/"
+                    CategoryType.DRACHINA -> "https://www.dracinema.com/"
+                    CategoryType.MOVIES -> "https://themoviebox.xyz/"
+                    CategoryType.YOUTUBE -> "https://www.youtube.com/"
+                    else -> "https://anichin.ro/"
+                }
                 val playableUrl = StreamResolver.resolveToDirectStream(chosenServerUrl, defaultReferer)
 
                 if (playableUrl.isNotBlank()) {
@@ -413,9 +419,15 @@ fun VideoPlayerScreen(
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1
                             )
-                            val isMovieContent = episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
+                            val isMovieContent = (category == CategoryType.MOVIES) || (episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
+                            val isYouTubeContent = category == CategoryType.YOUTUBE
+                            val epSubText = when {
+                                isMovieContent -> "Full Movie"
+                                isYouTubeContent -> "YouTube Video"
+                                else -> "Episode ${if (currentEpisode <= 0) 1 else currentEpisode}"
+                            }
                             Text(
-                                text = if (isMovieContent) "Full Movie" else "Episode ${if (currentEpisode <= 0) 1 else currentEpisode}",
+                                text = epSubText,
                                 color = TextMuted,
                                 fontSize = 12.sp
                             )
@@ -481,42 +493,21 @@ fun VideoPlayerScreen(
                                     fontWeight = FontWeight.Medium,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Color.White)
-                                            .clickable {
-                                                autoRetryCount = 0
-                                                streamError = null
-                                                isLoading = true
-                                                exoPlayer.prepare()
-                                                exoPlayer.play()
-                                            }
-                                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text("Coba Lagi", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    }
-
-                                    val srvList = streamResult?.servers.orEmpty()
-                                    if (srvList.size > 1) {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .border(1.dp, GlassBorder, RoundedCornerShape(8.dp))
-                                                .background(SurfaceElevated)
-                                                .clickable {
-                                                    currentServerIndex = (currentServerIndex + 1) % srvList.size
-                                                    autoRetryCount = 0
-                                                    streamError = null
-                                                }
-                                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text("Ganti Server", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color.White)
+                                        .clickable {
+                                            autoRetryCount = 0
+                                            streamError = null
+                                            isLoading = true
+                                            exoPlayer.prepare()
+                                            exoPlayer.play()
                                         }
-                                    }
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("Coba Lagi", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -614,9 +605,15 @@ fun VideoPlayerScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        val isMovieBelow = episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
+                        val isMovieBelow = (category == CategoryType.MOVIES) || (episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
+                        val isYouTubeBelow = category == CategoryType.YOUTUBE
+                        val playingText = when {
+                            isMovieBelow -> "Sedang Memutar: Full Movie"
+                            isYouTubeBelow -> "Sedang Memutar: YouTube Video"
+                            else -> "Sedang Memutar: Episode ${if (currentEpisode <= 0) 1 else currentEpisode}"
+                        }
                         Text(
-                            text = if (isMovieBelow) "Sedang Memutar: Full Movie" else "Sedang Memutar: Episode ${if (currentEpisode <= 0) 1 else currentEpisode}",
+                            text = playingText,
                             color = TextMuted,
                             fontSize = 13.sp
                         )
@@ -711,49 +708,6 @@ fun VideoPlayerScreen(
                         }
 
                         Spacer(modifier = Modifier.height(24.dp))
-
-                        // Server Switcher (if multiple servers available)
-                        val srvs = streamResult?.servers.orEmpty()
-                        if (srvs.size > 1) {
-                            Text(
-                                text = "PILIH SERVER",
-                                color = TextDim,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            androidx.compose.foundation.lazy.LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                items(srvs.size) { idx ->
-                                    val srv = srvs[idx]
-                                    val isSelectedSrv = idx == currentServerIndex
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .border(1.dp, if (isSelectedSrv) Color.White else BorderHairline, RoundedCornerShape(8.dp))
-                                            .background(if (isSelectedSrv) Color.White else SurfaceElevated)
-                                            .clickable {
-                                                if (currentServerIndex != idx) {
-                                                    currentServerIndex = idx
-                                                    autoRetryCount = 0
-                                                    streamError = null
-                                                }
-                                            }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = srv.name,
-                                            color = if (isSelectedSrv) CanvasBlack else TextPrimary,
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelectedSrv) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(16.dp))
-                        }
 
                         // Scrollable Episode Grid Header
                         Row(

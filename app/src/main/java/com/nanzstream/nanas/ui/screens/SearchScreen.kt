@@ -53,6 +53,9 @@ fun SearchScreen(
         CategoryType.ALL,
         CategoryType.ANIME,
         CategoryType.DONGHUA,
+        CategoryType.DRACHINA,
+        CategoryType.MOVIES,
+        CategoryType.YOUTUBE,
         CategoryType.MANGA
     )
 

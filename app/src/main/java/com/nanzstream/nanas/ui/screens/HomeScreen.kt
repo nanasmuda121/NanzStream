@@ -90,7 +90,43 @@ fun HomeScreen(
                     onClick = { onNavigateToCategory("donghua") }
                 )
 
-                // Universe 4: Live TV
+                // Universe 4: Drama China
+                UniverseCard(
+                    title = "DRAMA CHINA",
+                    subtitle = "Drama Pendek Romantis, CEO, Reinkarnasi & Wuxia Sub Indo.",
+                    actionText = "Nonton Drama China",
+                    badgeCount = "2.5k+ EPISODES",
+                    badgeHighlight = "DRACINEMA HD",
+                    icon = Icons.Default.PlayArrow,
+                    watermarkText = "🎭",
+                    onClick = { onNavigateToCategory("drachina") }
+                )
+
+                // Universe 5: Movies
+                UniverseCard(
+                    title = "MOVIES",
+                    subtitle = "Koleksi Film Layar Lebar Box Office & Sinema Indonesia.",
+                    actionText = "Jelajahi Film Box Office",
+                    badgeCount = "1.8k+ TITLES",
+                    badgeHighlight = "THEMOVIEBOX",
+                    icon = Icons.Default.LiveTv,
+                    watermarkText = "🍿",
+                    onClick = { onNavigateToCategory("movies") }
+                )
+
+                // Universe 6: YouTube
+                UniverseCard(
+                    title = "YOUTUBE",
+                    subtitle = "Nonton Bebas Iklan, Video Trending, Shorts & Channel Favorit.",
+                    actionText = "Buka Portal YouTube",
+                    badgeCount = "MILLIONS",
+                    badgeHighlight = "NEWPIPE ENGINE",
+                    icon = Icons.Default.PlayArrow,
+                    watermarkText = "▶",
+                    onClick = { onNavigateToCategory("youtube") }
+                )
+
+                // Universe 7: Live TV
                 UniverseCard(
                     title = "LIVE TV",
                     subtitle = "Siaran Langsung TV Nasional, Berita, Hiburan & Sports HD.",

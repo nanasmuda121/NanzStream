@@ -39,6 +39,9 @@ fun CategoryScreen(
     val categories = listOf(
         CategoryType.ANIME,
         CategoryType.DONGHUA,
+        CategoryType.DRACHINA,
+        CategoryType.MOVIES,
+        CategoryType.YOUTUBE,
         CategoryType.MANGA,
         CategoryType.VOD
     )
@@ -49,6 +52,9 @@ fun CategoryScreen(
             items = when (selectedCategory) {
                 CategoryType.ANIME -> repository.getAnimeLatest(1)
                 CategoryType.DONGHUA -> repository.getDonghuaLatest(1)
+                CategoryType.DRACHINA -> repository.getDrachinaLatest(1)
+                CategoryType.MOVIES -> repository.getMoviesLatest(1)
+                CategoryType.YOUTUBE -> repository.getYouTubeLatest(1)
                 CategoryType.MANGA -> repository.getMangaHome()
                 CategoryType.VOD -> repository.getVodList(1)
                 else -> repository.getAnimeLatest(1)

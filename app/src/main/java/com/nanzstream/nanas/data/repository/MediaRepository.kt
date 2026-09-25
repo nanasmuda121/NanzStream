@@ -127,6 +127,46 @@ class MediaRepository {
         getFallbackVod()
     }
 
+    suspend fun getDrachinaLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
+        try {
+            val res = DracinemaScraper.getLatest(page)
+            if (res.isNotEmpty()) return@withContext res
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        emptyList()
+    }
+
+    suspend fun getMoviesLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
+        try {
+            val res = MovieBoxScraper.getLatest(page)
+            if (res.isNotEmpty()) return@withContext res
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        emptyList()
+    }
+
+    suspend fun getYouTubeLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
+        try {
+            val res = YouTubeScraper.getLatest(page)
+            if (res.isNotEmpty()) return@withContext res
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        emptyList()
+    }
+
+    suspend fun getYouTubeShorts(): List<MediaItem> = withContext(Dispatchers.IO) {
+        try {
+            val res = YouTubeScraper.getShorts()
+            if (res.isNotEmpty()) return@withContext res
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        emptyList()
+    }
+
     // Real search across categories
     suspend fun search(category: CategoryType, query: String, page: Int = 1): List<MediaItem> =
         withContext(Dispatchers.IO) {
@@ -136,13 +176,22 @@ class MediaRepository {
                     CategoryType.ANIME -> results.addAll(OtakudesuScraper.search(query))
                     CategoryType.DONGHUA -> results.addAll(DonghuaScraper.search(query, page))
                     CategoryType.MANGA -> results.addAll(WebtoonScraper.search(query))
+                    CategoryType.DRACHINA -> results.addAll(DracinemaScraper.search(query))
+                    CategoryType.MOVIES -> results.addAll(MovieBoxScraper.search(query))
+                    CategoryType.YOUTUBE -> results.addAll(YouTubeScraper.search(query))
                     CategoryType.ALL -> {
                         val otakuAsync = async { OtakudesuScraper.search(query) }
                         val donghuaAsync = async { DonghuaScraper.search(query, 1) }
                         val webtoonAsync = async { WebtoonScraper.search(query) }
+                        val drachinAsync = async { DracinemaScraper.search(query) }
+                        val movieAsync = async { MovieBoxScraper.search(query) }
+                        val ytAsync = async { YouTubeScraper.search(query) }
                         results.addAll(otakuAsync.await())
                         results.addAll(donghuaAsync.await())
                         results.addAll(webtoonAsync.await())
+                        results.addAll(drachinAsync.await())
+                        results.addAll(movieAsync.await())
+                        results.addAll(ytAsync.await())
                     }
                     else -> {}
                 }
@@ -183,11 +232,25 @@ class MediaRepository {
                         val mbList = WebtoonScraper.search(cleanQ).take(6).map { it.title }
                         mbList.forEach { add(it) }
                     }
+                    CategoryType.DRACHINA -> {
+                        val dcList = DracinemaScraper.search(cleanQ).take(6).map { it.title }
+                        dcList.forEach { add(it) }
+                    }
+                    CategoryType.MOVIES -> {
+                        val mvList = MovieBoxScraper.search(cleanQ).take(6).map { it.title }
+                        mvList.forEach { add(it) }
+                    }
+                    CategoryType.YOUTUBE -> {
+                        val ytList = YouTubeScraper.search(cleanQ).take(6).map { it.title }
+                        ytList.forEach { add(it) }
+                    }
                     else -> {
-                        val anime = OtakudesuScraper.search(cleanQ).take(3).map { it.title }
-                        val dh = DonghuaScraper.search(cleanQ, 1).take(3).map { it.title }
-                        val wt = WebtoonScraper.search(cleanQ).take(3).map { it.title }
-                        (anime + dh + wt).forEach { add(it) }
+                        val anime = OtakudesuScraper.search(cleanQ).take(2).map { it.title }
+                        val dh = DonghuaScraper.search(cleanQ, 1).take(2).map { it.title }
+                        val wt = WebtoonScraper.search(cleanQ).take(2).map { it.title }
+                        val dc = DracinemaScraper.search(cleanQ).take(2).map { it.title }
+                        val yt = YouTubeScraper.search(cleanQ).take(2).map { it.title }
+                        (anime + dh + wt + dc + yt).forEach { add(it) }
                     }
                 }
             } catch (e: Exception) {
@@ -204,6 +267,9 @@ class MediaRepository {
                     CategoryType.ANIME -> OtakudesuScraper.getDetail(idOrSlug)
                     CategoryType.DONGHUA -> DonghuaScraper.getDetail(idOrSlug)
                     CategoryType.MANGA -> WebtoonScraper.getDetail(idOrSlug)
+                    CategoryType.DRACHINA -> DracinemaScraper.getDetail(idOrSlug)
+                    CategoryType.MOVIES -> MovieBoxScraper.getDetail(idOrSlug)
+                    CategoryType.YOUTUBE -> YouTubeScraper.getDetail(idOrSlug)
                     CategoryType.VOD -> CubMuScraper.getVodDetail(idOrSlug)
                     else -> null
                 }
@@ -257,6 +323,9 @@ class MediaRepository {
                         }
                         DonghuaScraper.getStream(epUrl)
                     }
+                    CategoryType.DRACHINA -> DracinemaScraper.getStream(targetUrlOrSlug, episode)
+                    CategoryType.MOVIES -> MovieBoxScraper.getStream(targetUrlOrSlug, episode)
+                    CategoryType.YOUTUBE -> YouTubeScraper.getStream(targetUrlOrSlug, episode)
                     CategoryType.LIVETV -> CubMuScraper.getLiveStream(targetUrlOrSlug)
                     CategoryType.VOD -> CubMuScraper.getVodStream(targetUrlOrSlug)
                     else -> null

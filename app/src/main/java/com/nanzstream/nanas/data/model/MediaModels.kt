@@ -7,6 +7,9 @@ enum class CategoryType(val id: String, val displayName: String, val icon: Strin
     ANIME("anime", "Anime", "⚔️"),
     DONGHUA("donghua", "Donghua", "🐉"),
     MANGA("manga", "Webtoon", "📖"),
+    DRACHINA("drachina", "Drama China", "🎭"),
+    MOVIES("movies", "Movies", "🍿"),
+    YOUTUBE("youtube", "YouTube", "▶️"),
     LIVETV("livetv", "Live TV", "📺"),
     VOD("vod", "VOD Series", "🎬");
 

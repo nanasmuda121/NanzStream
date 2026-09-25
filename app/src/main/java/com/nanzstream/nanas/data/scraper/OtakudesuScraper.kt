@@ -433,14 +433,19 @@ object OtakudesuScraper {
             servers.add(StreamServerItem(name = "Otakudesu Web Player", url = targetUrl, isDirectHls = false))
         }
 
-        // Sort so Direct MP4 servers are ALWAYS first!
+        // Sort so Otaku Archive and Direct MP4 servers are ALWAYS first!
         val sortedServers = servers.sortedWith(
-            compareBy<StreamServerItem> { if (it.isDirectHls) 0 else 1 }
+            compareBy<StreamServerItem>(
+                { if (it.name.contains("Archive", ignoreCase = true)) 0 else if (it.isDirectHls) 1 else 2 },
+                { if (it.name.contains("720p", ignoreCase = true)) 0 else 1 }
+            )
         )
+
+        val finalDirect = sortedServers.firstOrNull { it.isDirectHls }?.url ?: directMp4
 
         StreamResult(
             title = title,
-            directHlsUrl = directMp4 ?: sortedServers.firstOrNull { it.isDirectHls }?.url,
+            directHlsUrl = finalDirect,
             iframePlayerUrl = sortedServers.firstOrNull { !it.isDirectHls }?.url,
             servers = sortedServers
         )
