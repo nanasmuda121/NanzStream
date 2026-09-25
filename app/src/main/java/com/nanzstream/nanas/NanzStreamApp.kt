@@ -6,6 +6,7 @@ import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import coil.request.CachePolicy
+import com.nanzstream.nanas.data.local.OfflineMangaManager
 import com.nanzstream.nanas.data.local.StorageManager
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -17,12 +18,15 @@ class NanzStreamApp : Application(), ImageLoaderFactory {
             private set
         lateinit var storage: StorageManager
             private set
+        lateinit var offlineManga: OfflineMangaManager
+            private set
     }
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         storage = StorageManager(this)
+        offlineManga = OfflineMangaManager(this)
         coil.Coil.setImageLoader(newImageLoader())
     }
 

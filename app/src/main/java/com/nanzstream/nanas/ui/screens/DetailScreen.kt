@@ -382,13 +382,14 @@ fun DetailScreen(
         } else {
             // Chapter List (for Manga)
             items(currentDetail.chapters) { ch ->
+                val isDownloaded = remember(ch.id) { NanzStreamApp.offlineManga.isChapterDownloaded(ch.id) }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
-                        .background(DarkCard)
+                        .border(1.dp, if (isDownloaded) Color(0x6610B981) else GlassBorder, RoundedCornerShape(12.dp))
+                        .background(if (isDownloaded) Color(0x1410B981) else DarkCard)
                         .clickable { onReadChapter(currentDetail, ch) }
                         .padding(14.dp)
                 ) {
@@ -398,12 +399,23 @@ fun DetailScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text(
-                                text = ch.title,
-                                color = TextPrimary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = ch.title,
+                                    color = TextPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (isDownloaded) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "✓ Offline",
+                                        color = Color(0xFF10B981),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                             if (!ch.subtitle.isNullOrBlank()) {
                                 Text(
                                     text = ch.subtitle,
@@ -416,12 +428,12 @@ fun DetailScreen(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color.White)
+                                .background(if (isDownloaded) Color(0xFF10B981) else Color.White)
                                 .padding(horizontal = 10.dp, vertical = 5.dp)
                         ) {
                             Text(
-                                text = "Baca",
-                                color = Color.Black,
+                                text = if (isDownloaded) "Baca Offline" else "Baca",
+                                color = if (isDownloaded) Color.White else Color.Black,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )

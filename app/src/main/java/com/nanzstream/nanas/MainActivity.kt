@@ -81,6 +81,11 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate(
                                         Screen.Detail.createRoute("manga", item.slug ?: item.id)
                                     )
+                                },
+                                onReadOfflineChapter = { mangaId, chapterId, chapterTitle ->
+                                    navController.navigate(
+                                        Screen.Reader.createRoute(mangaId, chapterId, chapterTitle)
+                                    )
                                 }
                             )
                         }

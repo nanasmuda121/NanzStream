@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -14,9 +16,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,20 +30,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.nanzstream.nanas.NanzStreamApp
 import com.nanzstream.nanas.data.model.CategoryType
 import com.nanzstream.nanas.data.model.MediaItem
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.ui.components.MediaItemCard
 import com.nanzstream.nanas.ui.theme.*
+import java.io.File
 
 private enum class KomikTab(val title: String, val icon: ImageVector) {
     JADWAL("Jadwal", Icons.Default.CalendarToday),
-    KOLEKSI("Koleksi", Icons.Default.MenuBook),
+    OFFLINE("Offline", Icons.Default.DownloadDone),
     SEARCH("Cari", Icons.Default.Search)
 }
 
@@ -47,6 +57,7 @@ fun KomikPortalScreen(
     repository: MediaRepository,
     onBackToPortal: () -> Unit,
     onKomikClick: (MediaItem) -> Unit,
+    onReadOfflineChapter: (mangaId: String, chapterId: String, chapterTitle: String) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var currentTab by remember { mutableStateOf(KomikTab.JADWAL) }
@@ -222,7 +233,7 @@ fun KomikPortalScreen(
                 .background(CanvasBlack)
         ) {
             when (currentTab) {
-                KomikTab.JADWAL, KomikTab.KOLEKSI -> {
+                KomikTab.JADWAL -> {
                     if (isLoading && komikList.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -246,6 +257,198 @@ fun KomikPortalScreen(
                                         .fillMaxWidth()
                                         .height(185.dp)
                                 )
+                            }
+                        }
+                    }
+                }
+
+                KomikTab.OFFLINE -> {
+                    var offlineList by remember {
+                        mutableStateOf(NanzStreamApp.offlineManga.getAllOfflineChapters())
+                    }
+
+                    if (offlineList.isEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .border(1.dp, GlassBorder, CircleShape)
+                                    .background(SurfaceElevated),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FileDownload,
+                                    contentDescription = null,
+                                    tint = TextDim,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Belum Ada Komik Offline",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Buka chapter komik apa saja, lalu klik tombol \"Tambahkan ke Offline\" untuk membaca tanpa kuota internet.",
+                                color = TextMuted,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            item {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "KOMIK TERSIMPAN (${offlineList.size} CHAPTER)",
+                                        color = TextDim,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.sp
+                                    )
+                                }
+                            }
+
+                            items(offlineList, key = { it.chapterId }) { ch ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .border(1.dp, GlassBorder, RoundedCornerShape(14.dp))
+                                        .background(SurfaceElevated)
+                                        .clickable {
+                                            onReadOfflineChapter(ch.mangaId, ch.chapterId, ch.chapterTitle)
+                                        }
+                                        .padding(12.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            // Thumbnail from local file
+                                            val thumbModel = if (ch.pages.isNotEmpty()) {
+                                                File(ch.pages.first().removePrefix("file://"))
+                                            } else {
+                                                ch.thumbnail
+                                            }
+                                            AsyncImage(
+                                                model = thumbModel,
+                                                contentDescription = ch.chapterTitle,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .size(54.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(SurfaceCharcoal)
+                                            )
+
+                                            Spacer(modifier = Modifier.width(12.dp))
+
+                                            Column {
+                                                Text(
+                                                    text = ch.chapterTitle,
+                                                    color = TextPrimary,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1
+                                                )
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = ch.mangaTitle,
+                                                    color = TextDim,
+                                                    fontSize = 12.sp,
+                                                    maxLines = 1
+                                                )
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.CheckCircle,
+                                                        contentDescription = null,
+                                                        tint = Color(0xFF10B981),
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                    Text(
+                                                        text = "${ch.pageCount} Halaman • Siap Offline",
+                                                        color = Color(0xFF10B981),
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        // Actions: Delete & Read
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .clip(CircleShape)
+                                                    .border(1.dp, GlassBorder, CircleShape)
+                                                    .background(GlassBackground)
+                                                    .clickable {
+                                                        NanzStreamApp.offlineManga.deleteOfflineChapter(ch.chapterId)
+                                                        offlineList = NanzStreamApp.offlineManga.getAllOfflineChapters()
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.DeleteOutline,
+                                                    contentDescription = "Hapus",
+                                                    tint = TextMuted,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(Color.White)
+                                                    .clickable {
+                                                        onReadOfflineChapter(ch.mangaId, ch.chapterId, ch.chapterTitle)
+                                                    }
+                                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Baca",
+                                                    color = CanvasBlack,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
