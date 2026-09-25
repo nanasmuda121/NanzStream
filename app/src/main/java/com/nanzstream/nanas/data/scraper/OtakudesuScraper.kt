@@ -230,8 +230,7 @@ object OtakudesuScraper {
                                 servers.add(
                                     StreamServerItem(
                                         name = "Otaku Server (720p Direct)",
-                                        url = directUrl,
-                                        quality = "720p"
+                                        url = directUrl
                                     )
                                 )
                             }
@@ -258,7 +257,7 @@ object OtakudesuScraper {
             val quality = a.parent()?.selectFirst("strong")?.text()?.trim() ?: "HD"
             val host = a.text().trim()
             if (href.startsWith("http") && (href.contains("mp4") || href.contains("stream") || href.contains("pixeldrain") || href.contains("gofile"))) {
-                servers.add(StreamServerItem(name = "$host ($quality)", url = href, quality = quality))
+                servers.add(StreamServerItem(name = "$host ($quality)", url = href))
             }
         }
 

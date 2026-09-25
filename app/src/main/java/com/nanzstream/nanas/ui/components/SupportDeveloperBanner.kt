@@ -231,7 +231,7 @@ fun SupportDeveloperDialog(
                 .fillMaxWidth()
                 .padding(16.dp),
             shape = RoundedCornerShape(20.dp),
-            color = SurfaceCard,
+            color = DarkCard,
             tonalElevation = 6.dp,
             border = androidx.compose.foundation.BorderStroke(
                 1.dp,

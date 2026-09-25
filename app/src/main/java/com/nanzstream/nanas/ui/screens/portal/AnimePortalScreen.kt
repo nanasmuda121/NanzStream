@@ -60,6 +60,7 @@ fun AnimePortalScreen(
     var latestList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var popularList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var searchResults by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var searchSuggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
     val focusManager = LocalFocusManager.current
@@ -333,14 +334,17 @@ fun AnimePortalScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Cari judul anime di Samehadaku...", color = TextDim, fontSize = 13.sp) },
+                            placeholder = { Text("Cari judul anime di Samehadaku & Otakudesu...", color = TextDim, fontSize = 13.sp) },
                             singleLine = true,
                             leadingIcon = {
                                 Icon(Icons.Default.Search, contentDescription = null, tint = TextDim)
                             },
                             trailingIcon = {
                                 if (searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { searchQuery = "" }) {
+                                    IconButton(onClick = { 
+                                        searchQuery = "" 
+                                        searchSuggestions = emptyList()
+                                    }) {
                                         Icon(Icons.Default.Close, contentDescription = "Hapus", tint = TextDim)
                                     }
                                 }
@@ -349,10 +353,6 @@ fun AnimePortalScreen(
                             keyboardActions = KeyboardActions(
                                 onSearch = {
                                     focusManager.clearFocus()
-                                    if (searchQuery.isNotBlank()) {
-                                        isLoading = true
-                                        // Execute search
-                                    }
                                 }
                             ),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -370,18 +370,58 @@ fun AnimePortalScreen(
                             if (searchQuery.length >= 2) {
                                 isLoading = true
                                 try {
+                                    val sugg = repository.getSearchSuggestions(CategoryType.ANIME, searchQuery)
+                                    searchSuggestions = sugg
                                     searchResults = repository.search(CategoryType.ANIME, searchQuery, 1)
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                 } finally {
                                     isLoading = false
                                 }
-                            } else if (searchQuery.isEmpty()) {
+                            } else {
                                 searchResults = emptyList()
+                                searchSuggestions = emptyList()
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        if (searchSuggestions.isNotEmpty()) {
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                contentPadding = PaddingValues(vertical = 8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(searchSuggestions) { suggestion ->
+                                    Row(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(100.dp))
+                                            .background(SurfaceElevated)
+                                            .border(1.dp, BorderHairline, RoundedCornerShape(100.dp))
+                                            .clickable {
+                                                searchQuery = suggestion
+                                                focusManager.clearFocus()
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Search,
+                                            contentDescription = null,
+                                            tint = TextDim,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Text(
+                                            text = suggestion,
+                                            color = TextPrimary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
 
                         if (isLoading) {
                             Box(

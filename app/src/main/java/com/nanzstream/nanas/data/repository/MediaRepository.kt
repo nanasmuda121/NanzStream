@@ -186,6 +186,52 @@ class MediaRepository {
             results
         }
 
+    suspend fun getSearchSuggestions(category: CategoryType, query: String): List<String> =
+        withContext(Dispatchers.IO) {
+            val cleanQ = query.trim()
+            if (cleanQ.length < 2) return@withContext emptyList()
+            val list = mutableListOf<String>()
+            val seen = mutableSetOf<String>()
+
+            fun add(title: String) {
+                val clean = title
+                    .replace(Regex("""Subtitle Indonesia|Sub Indo|Season \d+|Part \d+""", RegexOption.IGNORE_CASE), "")
+                    .replace(Regex("""\s+"""), " ")
+                    .trim()
+                if (clean.length > 2 && seen.add(clean.lowercase())) {
+                    list.add(clean)
+                }
+            }
+
+            try {
+                when (category) {
+                    CategoryType.ANIME -> {
+                        val shList = AnimeScraper.search(cleanQ, 1).take(5).map { it.title }
+                        val otList = OtakudesuScraper.search(cleanQ).take(5).map { it.title }
+                        (shList + otList).forEach { add(it) }
+                    }
+                    CategoryType.DONGHUA -> {
+                        val dhList = DonghuaScraper.search(cleanQ, 1).take(6).map { it.title }
+                        dhList.forEach { add(it) }
+                    }
+                    CategoryType.MANGA -> {
+                        val mbList = WebtoonScraper.search(cleanQ).take(6).map { it.title }
+                        mbList.forEach { add(it) }
+                    }
+                    else -> {
+                        val anime = AnimeScraper.search(cleanQ, 1).take(3).map { it.title }
+                        val dh = DonghuaScraper.search(cleanQ, 1).take(3).map { it.title }
+                        val wt = WebtoonScraper.search(cleanQ).take(3).map { it.title }
+                        (anime + dh + wt).forEach { add(it) }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            list.take(8)
+        }
+
     suspend fun getDetail(category: CategoryType, idOrSlug: String): MediaDetail? =
         withContext(Dispatchers.IO) {
             try {

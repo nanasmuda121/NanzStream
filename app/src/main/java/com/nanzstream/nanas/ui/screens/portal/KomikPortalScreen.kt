@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -69,6 +70,7 @@ fun KomikPortalScreen(
     var scheduleCache by remember { mutableStateOf<Map<Int, List<MediaItem>>>(emptyMap()) }
     var komikList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var searchResults by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var searchSuggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
     val focusManager = LocalFocusManager.current
@@ -492,7 +494,10 @@ fun KomikPortalScreen(
                             },
                             trailingIcon = {
                                 if (searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { searchQuery = "" }) {
+                                    IconButton(onClick = { 
+                                        searchQuery = "" 
+                                        searchSuggestions = emptyList()
+                                    }) {
                                         Icon(Icons.Default.Close, contentDescription = "Hapus", tint = TextDim)
                                     }
                                 }
@@ -516,18 +521,58 @@ fun KomikPortalScreen(
                             if (searchQuery.length >= 2) {
                                 isLoading = true
                                 try {
+                                    val sugg = repository.getSearchSuggestions(CategoryType.MANGA, searchQuery)
+                                    searchSuggestions = sugg
                                     searchResults = repository.search(CategoryType.MANGA, searchQuery, 1)
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                 } finally {
                                     isLoading = false
                                 }
-                            } else if (searchQuery.isEmpty()) {
+                            } else {
                                 searchResults = emptyList()
+                                searchSuggestions = emptyList()
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        if (searchSuggestions.isNotEmpty()) {
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                contentPadding = PaddingValues(vertical = 8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(searchSuggestions) { suggestion ->
+                                    Row(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(100.dp))
+                                            .background(SurfaceElevated)
+                                            .border(1.dp, BorderHairline, RoundedCornerShape(100.dp))
+                                            .clickable {
+                                                searchQuery = suggestion
+                                                focusManager.clearFocus()
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Search,
+                                            contentDescription = null,
+                                            tint = TextDim,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Text(
+                                            text = suggestion,
+                                            color = TextPrimary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
 
                         if (isLoading) {
                             Box(
