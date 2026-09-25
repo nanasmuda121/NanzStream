@@ -21,17 +21,29 @@ import com.nanzstream.nanas.ui.screens.portal.*
 import com.nanzstream.nanas.ui.theme.CanvasBlack
 import com.nanzstream.nanas.ui.theme.NanzStreamTheme
 
+val LocalIsInPipMode = compositionLocalOf { false }
+
 class MainActivity : ComponentActivity() {
 
     private val repository = MediaRepository()
+    private var isInPipMode by mutableStateOf(false)
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPipMode = isInPictureInPictureMode
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         setContent {
-            NanzStreamTheme {
-                val navController = rememberNavController()
+            CompositionLocalProvider(LocalIsInPipMode provides isInPipMode) {
+                NanzStreamTheme {
+                    val navController = rememberNavController()
 
                 Box(
                     modifier = Modifier
@@ -207,4 +219,5 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
 }

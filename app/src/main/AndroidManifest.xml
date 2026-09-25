@@ -19,7 +19,8 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.NanzStream">
             <intent-filter>
