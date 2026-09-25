@@ -360,9 +360,12 @@ fun DetailScreen(
 
         // 4. Content List Header (Episodes or Chapters)
         item {
-            val listTitle = if (currentDetail.category == CategoryType.MANGA) "Daftar Chapter" else "Pilihan Episode"
+            val isMovie = currentDetail.category != CategoryType.MANGA && (currentDetail.title.contains("Movie", ignoreCase = true) || (currentDetail.episodes.size <= 1 && currentDetail.episodes.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
+            val listTitle = if (currentDetail.category == CategoryType.MANGA) "Daftar Chapter" else if (isMovie) "Film / Movie" else "Pilihan Episode"
             val countText = if (currentDetail.category == CategoryType.MANGA) {
                 "${currentDetail.chapters.size} Chapter"
+            } else if (isMovie) {
+                "Full Movie"
             } else {
                 "${currentDetail.episodes.size} Episode"
             }
@@ -390,6 +393,7 @@ fun DetailScreen(
 
         // 5. Episode List (for Video)
         if (currentDetail.category != CategoryType.MANGA) {
+            val isMovie = currentDetail.title.contains("Movie", ignoreCase = true) || (currentDetail.episodes.size <= 1 && currentDetail.episodes.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
             items(currentDetail.episodes) { ep ->
                 Box(
                     modifier = Modifier
@@ -423,8 +427,13 @@ fun DetailScreen(
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
+                                val epItemTitle = if (ep.title.equals("Episode 0", ignoreCase = true) || ep.episodeNumber == "0") {
+                                    if (isMovie) "Full Movie" else "Episode 1"
+                                } else {
+                                    ep.title
+                                }
                                 Text(
-                                    text = ep.title,
+                                    text = epItemTitle,
                                     color = TextPrimary,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold

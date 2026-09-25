@@ -79,16 +79,10 @@ object StreamResolver {
                     else -> null
                 }
 
-                // 1. Check for HLS manifest (.m3u8)
-                val hls = metaObj?.optString("hlsManifestUrl")
-                if (!hls.isNullOrBlank() && hls.startsWith("http")) {
-                    return@withContext hls
-                }
-
-                // 2. Check for direct MP4 video sources (ordered by quality)
+                // 1. Direct MP4 video streams from OK.ru (fast, reliable 200 OK without HLS 400 Bad Request error)
                 val videosArr = metaObj?.optJSONArray("videos")
                 if (videosArr != null && videosArr.length() > 0) {
-                    val preferred = listOf("full", "hd", "sd", "low", "lowest", "mobile")
+                    val preferred = listOf("hd", "sd", "full", "low", "mobile", "lowest")
                     for (p in preferred) {
                         for (i in 0 until videosArr.length()) {
                             val v = videosArr.getJSONObject(i)
@@ -101,6 +95,12 @@ object StreamResolver {
                     val fallback = videosArr.getJSONObject(0).optString("url")
                     if (fallback.startsWith("http")) return@withContext fallback
                 }
+
+                // 2. Check for HLS manifest (.m3u8) as secondary fallback
+                val hls = metaObj?.optString("hlsManifestUrl")
+                if (!hls.isNullOrBlank() && hls.startsWith("http")) {
+                    return@withContext hls
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -108,7 +108,7 @@ object StreamResolver {
         null
     }
 
-    private suspend fun extractDesuStreamDirect(desuUrl: String): String? = withContext(Dispatchers.IO) {
+    suspend fun extractDesuStreamDirect(desuUrl: String): String? = withContext(Dispatchers.IO) {
         try {
             val req = Request.Builder()
                 .url(desuUrl)
@@ -118,7 +118,8 @@ object StreamResolver {
             val resp = ApiClient.okHttpClient.newCall(req).execute()
             val html = resp.body?.string() ?: return@withContext null
 
-            val mp4Match = Regex("""(https?://[^\s"']+\.mp4[^\s"']*)""").find(html)
+            val mp4Match = Regex("""videoURL\s*=\s*["']([^"']+)["']""").find(html)
+                ?: Regex("""(https?://[^\s"']+\.mp4[^\s"']*)""").find(html)
             val m3u8Match = Regex("""(https?://[^\s"']+\.m3u8[^\s"']*)""").find(html)
             val direct = (mp4Match ?: m3u8Match)?.groupValues?.get(1)
             if (!direct.isNullOrBlank() && direct.startsWith("http") && !direct.endsWith("/.mp4") && !direct.contains("/download/.mp4")) {
@@ -130,7 +131,7 @@ object StreamResolver {
         null
     }
 
-    private suspend fun extractTurboVipDirect(turboUrl: String): String? = withContext(Dispatchers.IO) {
+    suspend fun extractTurboVipDirect(turboUrl: String): String? = withContext(Dispatchers.IO) {
         try {
             val req = Request.Builder()
                 .url(turboUrl)
@@ -141,6 +142,7 @@ object StreamResolver {
             val html = resp.body?.string() ?: return@withContext null
 
             val m3u8Match = Regex("""(https?://[^\s"']+\.m3u8[^\s"']*)""").find(html)?.groupValues?.get(1)
+                ?: Regex("""file:\s*["']([^"']+\.m3u8[^"']*)["']""").find(html)?.groupValues?.get(1)
             if (!m3u8Match.isNullOrBlank() && m3u8Match.startsWith("http")) {
                 return@withContext m3u8Match
             }

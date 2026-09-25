@@ -158,15 +158,23 @@ class MainActivity : ComponentActivity() {
                                 repository = repository,
                                 onBackClick = { navController.popBackStack() },
                                 onPlayEpisode = { detail, ep ->
+                                    val isMovie = detail.title.contains("Movie", ignoreCase = true) || (detail.episodes.size <= 1 && detail.episodes.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
+                                    val epItemTitle = if (ep.title.equals("Episode 0", ignoreCase = true) || ep.episodeNumber == "0") {
+                                        if (isMovie) "Full Movie" else "Episode 1"
+                                    } else {
+                                        ep.title
+                                    }
+                                    val parsedEp = ep.episodeNumber.toIntOrNull()
+                                        ?: Regex("""\b(\d+)\b""").find(ep.title)?.groupValues?.get(1)?.toIntOrNull()
+                                        ?: Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(ep.url)?.groupValues?.get(1)?.toIntOrNull()
+                                        ?: 1
+                                    val safeEpisode = if (parsedEp <= 0) 1 else parsedEp
                                     navController.navigate(
                                         Screen.Player.createRoute(
                                             category = detail.category.id,
-                                            title = "${detail.title} - ${ep.title}",
+                                            title = "${detail.title} - $epItemTitle",
                                             targetUrl = ep.url,
-                                            episode = ep.episodeNumber.toIntOrNull()
-                                                ?: Regex("""\b(\d+)\b""").find(ep.title)?.groupValues?.get(1)?.toIntOrNull()
-                                                ?: Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(ep.url)?.groupValues?.get(1)?.toIntOrNull()
-                                                ?: 1
+                                            episode = safeEpisode
                                         )
                                     )
                                 },
@@ -197,7 +205,8 @@ class MainActivity : ComponentActivity() {
                             val rawTargetUrl = backStack.arguments?.getString("targetUrl") ?: ""
                             val title = RouteEncoder.decode(rawTitle)
                             val targetUrl = RouteEncoder.decode(rawTargetUrl)
-                            val episode = backStack.arguments?.getInt("episode") ?: 1
+                            val rawEpisode = backStack.arguments?.getInt("episode") ?: 1
+                            val episode = if (rawEpisode <= 0) 1 else rawEpisode
 
                             VideoPlayerScreen(
                                 category = CategoryType.fromId(categoryStr),

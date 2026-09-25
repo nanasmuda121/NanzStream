@@ -110,6 +110,9 @@ fun VideoPlayerScreen(
     var streamResult by remember { mutableStateOf<StreamResult?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var isFullscreen by remember { mutableStateOf(false) }
+    var autoRetryCount by remember { mutableIntStateOf(0) }
+    var currentServerIndex by remember { mutableIntStateOf(0) }
+    var streamError by remember { mutableStateOf<String?>(null) }
 
     // Clean human-readable display title (resolves original title instead of raw IDs/numbers)
     val displayTitle = remember(title, streamResult) {
@@ -127,28 +130,21 @@ fun VideoPlayerScreen(
 
     // 100% Native ExoPlayer with custom LoadControl for lag resilience
     val exoPlayer = remember {
-        val defaultReferer = if (category == CategoryType.ANIME) "https://desustream.net/" else "https://anichin.ro/"
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
             .setConnectTimeoutMs(20_000)
             .setReadTimeoutMs(25_000)
             .setAllowCrossProtocolRedirects(true)
-            .setDefaultRequestProperties(
-                mapOf(
-                    "Referer" to defaultReferer,
-                    "Origin" to defaultReferer.trimEnd('/')
-                )
-            )
 
-        // Resilient buffer control: when lag happens, keep buffering (muter) without stopping total
+        // Resilient buffer control: fast startup (1s) and auto-recovery on network drops without freezing
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                20_000, // minBufferMs
-                60_000, // maxBufferMs
-                1_500,  // bufferForPlaybackMs
-                3_000   // bufferForPlaybackAfterRebufferMs (auto-resumes quickly)
+                /* minBufferMs = */ 15_000,
+                /* maxBufferMs = */ 50_000,
+                /* bufferForPlaybackMs = */ 1_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_500
             )
-            .setPrioritizeTimeOverSizeThresholds(true)
+            .setPrioritizeTimeOverSizeThresholds(false)
             .build()
 
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
@@ -229,23 +225,35 @@ fun VideoPlayerScreen(
         setSystemFullscreen(activity, false)
     }
 
-    // Player event listeners: on lag, keep spinning (buffering) & auto-retry on network disconnect
+    // Player event listeners: bounded retry and fallback to prevent infinite spinner loop
     DisposableEffect(Unit) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 error.printStackTrace()
-                // Auto-recover on network error/lag drop: keep buffering instead of stopping total
-                isLoading = true
-                exoPlayer.prepare()
-                exoPlayer.play()
+                val servers = streamResult?.servers.orEmpty()
+                if (autoRetryCount < 2) {
+                    autoRetryCount++
+                    isLoading = true
+                    exoPlayer.prepare()
+                    exoPlayer.play()
+                } else if (currentServerIndex + 1 < servers.size) {
+                    // Automatically switch to next available server if current fails
+                    currentServerIndex++
+                    autoRetryCount = 0
+                } else {
+                    isLoading = false
+                    streamError = "Gagal memutar video. Silakan coba lagi atau pilih server lain."
+                }
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
                     Player.STATE_BUFFERING -> {
-                        isLoading = true // Tetap muter / buffering saat lag
+                        isLoading = true
                     }
                     Player.STATE_READY -> {
                         isLoading = false
+                        streamError = null
+                        autoRetryCount = 0
                     }
                     Player.STATE_ENDED -> {
                         isLoading = false
@@ -275,49 +283,62 @@ fun VideoPlayerScreen(
     }
 
     // Load stream data on episode / URL change (100% NATIVE RESOLVER)
-    LaunchedEffect(currentTargetUrl, currentEpisode) {
+    LaunchedEffect(currentTargetUrl, currentEpisode, currentServerIndex) {
         isLoading = true
+        streamError = null
         try {
             val res = repository.getStream(category, currentTargetUrl, currentEpisode)
             streamResult = res
 
-            val rawStream = res?.directHlsUrl
-                ?: res?.servers?.firstOrNull { it.isDirectHls }?.url
-                ?: res?.servers?.firstOrNull()?.url
-                ?: ""
+            val availableServers = res?.servers.orEmpty()
+            val chosenServerUrl = if (availableServers.isNotEmpty()) {
+                availableServers.getOrNull(currentServerIndex)?.url ?: availableServers.first().url
+            } else {
+                res?.directHlsUrl ?: res?.iframePlayerUrl ?: ""
+            }
 
-            if (rawStream.isNotBlank()) {
+            if (chosenServerUrl.isNotBlank()) {
                 val defaultReferer = if (category == CategoryType.ANIME) "https://desustream.net/" else "https://anichin.ro/"
-                // Asynchronously resolve embed or direct link to native media URL
-                val playableUrl = StreamResolver.resolveToDirectStream(rawStream, defaultReferer)
+                val playableUrl = StreamResolver.resolveToDirectStream(chosenServerUrl, defaultReferer)
 
-                val mediaItemBuilder = MediaItem.Builder().setUri(playableUrl)
-                if (playableUrl.contains(".mpd", ignoreCase = true)) {
-                    mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
-                } else if (playableUrl.contains(".m3u8", ignoreCase = true)) {
-                    mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
-                } else if (playableUrl.contains(".mp4", ignoreCase = true)) {
-                    mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MP4)
+                if (playableUrl.isNotBlank()) {
+                    val mediaItemBuilder = MediaItem.Builder().setUri(playableUrl)
+                    if (playableUrl.contains(".mpd", ignoreCase = true)) {
+                        mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
+                    } else if (playableUrl.contains(".m3u8", ignoreCase = true)) {
+                        mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+                    } else if (playableUrl.contains(".mp4", ignoreCase = true)) {
+                        mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MP4)
+                    }
+                    exoPlayer.setMediaItem(mediaItemBuilder.build())
+                    exoPlayer.prepare()
+                    exoPlayer.play()
+                } else {
+                    isLoading = false
+                    streamError = "Tautan video tidak dapat diputar."
                 }
-                exoPlayer.setMediaItem(mediaItemBuilder.build())
-                exoPlayer.prepare()
-                exoPlayer.play()
+            } else {
+                isLoading = false
+                streamError = "Tautan streaming tidak ditemukan."
             }
 
             // Save to Continue Watching
+            val isMovie = episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
+            val lastTitle = if (isMovie) "Full Movie" else "Episode ${if (currentEpisode <= 0) 1 else currentEpisode}"
             NanzStreamApp.storage.saveContinueWatching(
                 ContinueWatchingItem(
                     mediaId = currentTargetUrl,
                     title = displayTitle,
                     thumbnail = "",
                     category = category,
-                    lastItemTitle = "Episode $currentEpisode",
+                    lastItemTitle = lastTitle,
                     lastTargetUrl = currentTargetUrl
                 )
             )
         } catch (e: Exception) {
             e.printStackTrace()
             isLoading = false
+            streamError = "Gagal memuat video: ${e.message}"
         }
     }
 
@@ -392,8 +413,9 @@ fun VideoPlayerScreen(
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1
                             )
+                            val isMovieContent = episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
                             Text(
-                                text = "Episode $currentEpisode",
+                                text = if (isMovieContent) "Full Movie" else "Episode ${if (currentEpisode <= 0) 1 else currentEpisode}",
                                 color = TextMuted,
                                 fontSize = 12.sp
                             )
@@ -436,6 +458,67 @@ fun VideoPlayerScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             CircularProgressIndicator(color = Color.White, strokeWidth = 2.5.dp)
+                        }
+                    }
+
+                    // Error Overlay inside Player Box with Retry & Server Switch
+                    if (streamError != null && !isLoading) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color(0xEE0D0D12))
+                                .padding(20.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(
+                                    text = streamError ?: "Gagal memutar video",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.White)
+                                            .clickable {
+                                                autoRetryCount = 0
+                                                streamError = null
+                                                isLoading = true
+                                                exoPlayer.prepare()
+                                                exoPlayer.play()
+                                            }
+                                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("Coba Lagi", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    val srvList = streamResult?.servers.orEmpty()
+                                    if (srvList.size > 1) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .border(1.dp, GlassBorder, RoundedCornerShape(8.dp))
+                                                .background(SurfaceElevated)
+                                                .clickable {
+                                                    currentServerIndex = (currentServerIndex + 1) % srvList.size
+                                                    autoRetryCount = 0
+                                                    streamError = null
+                                                }
+                                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("Ganti Server", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -531,8 +614,9 @@ fun VideoPlayerScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
+                        val isMovieBelow = episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
                         Text(
-                            text = "Sedang Memutar: Episode $currentEpisode",
+                            text = if (isMovieBelow) "Sedang Memutar: Full Movie" else "Sedang Memutar: Episode ${if (currentEpisode <= 0) 1 else currentEpisode}",
                             color = TextMuted,
                             fontSize = 13.sp
                         )
@@ -628,6 +712,49 @@ fun VideoPlayerScreen(
 
                         Spacer(modifier = Modifier.height(24.dp))
 
+                        // Server Switcher (if multiple servers available)
+                        val srvs = streamResult?.servers.orEmpty()
+                        if (srvs.size > 1) {
+                            Text(
+                                text = "PILIH SERVER",
+                                color = TextDim,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            androidx.compose.foundation.lazy.LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(srvs.size) { idx ->
+                                    val srv = srvs[idx]
+                                    val isSelectedSrv = idx == currentServerIndex
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .border(1.dp, if (isSelectedSrv) Color.White else BorderHairline, RoundedCornerShape(8.dp))
+                                            .background(if (isSelectedSrv) Color.White else SurfaceElevated)
+                                            .clickable {
+                                                if (currentServerIndex != idx) {
+                                                    currentServerIndex = idx
+                                                    autoRetryCount = 0
+                                                    streamError = null
+                                                }
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = srv.name,
+                                            color = if (isSelectedSrv) CanvasBlack else TextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelectedSrv) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+
                         // Scrollable Episode Grid Header
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -692,8 +819,10 @@ fun VideoPlayerScreen(
                                             },
                                         contentAlignment = Alignment.Center
                                     ) {
+                                        val isMovieChip = ep.title.contains("Movie", ignoreCase = true) || ep.episodeNumber.equals("Movie", ignoreCase = true)
+                                        val displayEpNumber = if (isMovieChip) "Movie" else if (ep.episodeNumber == "0" || epNum <= 0) "1" else ep.episodeNumber.ifBlank { "$epNum" }
                                         Text(
-                                            text = ep.episodeNumber.ifBlank { "$epNum" },
+                                            text = displayEpNumber,
                                             color = if (isSelected) CanvasBlack else TextPrimary,
                                             fontSize = 13.sp,
                                             fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold

@@ -223,15 +223,15 @@ class MediaRepository {
                         if (epUrl.contains("/anime/", ignoreCase = true) || !epUrl.contains("/episode/", ignoreCase = true)) {
                             val detail = OtakudesuScraper.getDetail(epUrl)
                             val foundEp = detail?.episodes?.find { it.episodeNumber.toIntOrNull() == episode }
-                                ?: detail?.episodes?.getOrNull(episode - 1)
+                                ?: detail?.episodes?.getOrNull((episode - 1).coerceAtLeast(0))
                                 ?: detail?.episodes?.firstOrNull()
                             if (foundEp != null && foundEp.url.isNotBlank()) {
                                 epUrl = foundEp.url
                             }
-                        } else {
+                        } else if (epUrl.contains("episode-", ignoreCase = true)) {
                             // If user explicitly navigated to a different episode number (e.g. Next Ep / Prev Ep)
                             val urlEpNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(epUrl)?.groupValues?.get(1)?.toIntOrNull()
-                            if (urlEpNum != null && urlEpNum != episode) {
+                            if (urlEpNum != null && urlEpNum != episode && episode > 0) {
                                 epUrl = epUrl.replace(Regex("""episode-\d+""", RegexOption.IGNORE_CASE), "episode-$episode")
                             }
                         }
@@ -240,18 +240,18 @@ class MediaRepository {
                     CategoryType.DONGHUA -> {
                         var epUrl = targetUrlOrSlug
                         // If given a series page (e.g. /anime/ or does not contain episode), resolve episode URL from detail
-                        if (epUrl.contains("/anime/", ignoreCase = true) || !epUrl.contains("episode", ignoreCase = true)) {
+                        if (epUrl.contains("/anime/", ignoreCase = true) || (!epUrl.contains("episode", ignoreCase = true) && !epUrl.contains("movie", ignoreCase = true))) {
                             val detail = DonghuaScraper.getDetail(epUrl)
                             val foundEp = detail?.episodes?.find { it.episodeNumber.toIntOrNull() == episode }
-                                ?: detail?.episodes?.getOrNull(episode - 1)
+                                ?: detail?.episodes?.getOrNull((episode - 1).coerceAtLeast(0))
                                 ?: detail?.episodes?.firstOrNull()
                             if (foundEp != null && foundEp.url.isNotBlank()) {
                                 epUrl = foundEp.url
                             }
-                        } else {
+                        } else if (epUrl.contains("episode-", ignoreCase = true)) {
                             // If user explicitly navigated to a different episode number (e.g. Next Ep / Prev Ep)
                             val urlEpNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(epUrl)?.groupValues?.get(1)?.toIntOrNull()
-                            if (urlEpNum != null && urlEpNum != episode) {
+                            if (urlEpNum != null && urlEpNum != episode && episode > 0) {
                                 epUrl = epUrl.replace(Regex("""episode-\d+""", RegexOption.IGNORE_CASE), "episode-$episode")
                             }
                         }

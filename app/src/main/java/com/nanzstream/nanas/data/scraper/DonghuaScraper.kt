@@ -125,7 +125,9 @@ object DonghuaScraper {
         }
 
         val episodes = mutableListOf<EpisodeItem>()
-        // Parse episodes from .episodes-ul a, .eplister li a, a.ep-item
+        val isMovieSeries = title.contains("Movie", ignoreCase = true) || targetUrl.contains("movie", ignoreCase = true)
+
+        // Parse episodes from .episodes-ul a, .eplister ul li a, .listepisodes a, a.ep-item, a.item
         doc.select(".episodes-ul a, .eplister ul li a, .listepisodes a, a.ep-item, a.item").forEach { el ->
             val href = if (el.tagName() == "a") el.attr("href") else el.selectFirst("a")?.attr("href") ?: ""
             if (href.isNotBlank() && href.startsWith("http") &&
@@ -134,13 +136,28 @@ object DonghuaScraper {
                 val orderText = el.selectFirst(".order, .epl-num")?.text()?.trim().orEmpty()
                 val dataNum = el.attr("data-number").trim()
                 val urlNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(href)?.groupValues?.get(1).orEmpty()
+                val isMovieLink = isMovieSeries || href.contains("movie", ignoreCase = true)
+                val isPvLink = href.contains("pv-", ignoreCase = true) || href.contains("trailer", ignoreCase = true)
+                val isSpecialLink = href.contains("special", ignoreCase = true)
+
                 val epNum = when {
-                    dataNum.isNotBlank() -> dataNum
-                    orderText.isNotBlank() -> orderText
-                    urlNum.isNotBlank() -> urlNum
-                    else -> (episodes.size + 1).toString()
+                    dataNum.isNotBlank() && dataNum != "0" -> dataNum
+                    orderText.isNotBlank() && orderText != "0" -> orderText
+                    urlNum.isNotBlank() && urlNum != "0" -> urlNum
+                    isMovieLink -> "1"
+                    isPvLink -> "PV"
+                    isSpecialLink -> "Special"
+                    else -> "1"
                 }
-                val epTitle = if (epNum.isNotBlank()) "Episode $epNum" else "Episode"
+
+                val epTitle = when {
+                    isMovieLink -> "Full Movie"
+                    isPvLink -> "PV / Trailer"
+                    isSpecialLink -> "Episode Special"
+                    epNum.toIntOrNull() != null -> "Episode $epNum"
+                    else -> "Episode $epNum"
+                }
+
                 if (!episodes.any { it.url == href }) {
                     episodes.add(
                         EpisodeItem(
@@ -156,19 +173,27 @@ object DonghuaScraper {
 
         // Fallback if no episodes parsed
         if (episodes.isEmpty()) {
-            val epNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(targetUrl)?.groupValues?.get(1) ?: "1"
+            val urlEpNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(targetUrl)?.groupValues?.get(1)
+            val epNum = urlEpNum?.takeIf { it != "0" } ?: "1"
+            val epTitle = if (isMovieSeries) "Full Movie" else "Episode $epNum"
             episodes.add(
                 EpisodeItem(
                     id = targetUrl,
                     episodeNumber = epNum,
-                    title = "Episode $epNum",
+                    title = epTitle,
                     url = targetUrl
                 )
             )
         }
 
         // Sort so Episode 1 is first
-        episodes.sortBy { it.episodeNumber.toIntOrNull() ?: 0 }
+        episodes.sortBy { it.episodeNumber.toIntOrNull() ?: 1 }
+
+        val totalEpLabel = if (isMovieSeries || (episodes.size == 1 && episodes.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)) {
+            "Full Movie"
+        } else {
+            "${episodes.size} Episode"
+        }
 
         MediaDetail(
             id = targetUrl,
@@ -179,7 +204,7 @@ object DonghuaScraper {
             genres = genres,
             status = "Ongoing",
             rating = "8.8",
-            totalEpisodes = "${episodes.size} Episode",
+            totalEpisodes = totalEpLabel,
             episodes = episodes
         )
     }
@@ -246,7 +271,7 @@ object DonghuaScraper {
                 if (src.contains("ok.ru/videoembed/")) {
                     val direct = StreamResolver.extractOkRuDirect(src, "https://anichin.ro/")
                     if (!direct.isNullOrBlank() && !servers.any { it.url == direct }) {
-                        servers.add(StreamServerItem("Anichin OK.ru (Direct Stream)", direct, isDirectHls = true))
+                        servers.add(StreamServerItem("Anichin OK.ru (Direct MP4)", direct, isDirectHls = true))
                     }
                 }
                 if (!servers.any { it.url == src }) {
@@ -276,20 +301,14 @@ object DonghuaScraper {
                         if (iframeUrl.contains("ok.ru/videoembed/")) {
                             val okDirect = StreamResolver.extractOkRuDirect(iframeUrl, "https://anichin.ro/")
                             if (!okDirect.isNullOrBlank() && !servers.any { it.url == okDirect }) {
-                                servers.add(StreamServerItem("Anichin OK.ru (Direct Stream)", okDirect, isDirectHls = true))
+                                servers.add(StreamServerItem("Anichin OK.ru (Direct MP4)", okDirect, isDirectHls = true))
                             }
                         }
 
                         // Check if it's TurboVIP and try to extract direct .m3u8
                         var directHlsUrl: String? = null
                         if (iframeUrl.contains("turbovidhls.com") || iframeUrl.contains("turbovid")) {
-                            try {
-                                val turboHtml = fetchHtml(iframeUrl)
-                                val m3u8Match = Regex("""(https?://[^\s"']+\.m3u8[^\s"']*)""").find(turboHtml ?: "")
-                                directHlsUrl = m3u8Match?.groupValues?.get(1)
-                            } catch (e: Exception) {
-                                // ignore
-                            }
+                            directHlsUrl = StreamResolver.extractTurboVipDirect(iframeUrl)
                         }
 
                         if (!directHlsUrl.isNullOrBlank()) {
