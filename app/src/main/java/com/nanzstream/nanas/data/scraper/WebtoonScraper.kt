@@ -7,6 +7,8 @@ import com.nanzstream.nanas.data.model.MediaDetail
 import com.nanzstream.nanas.data.model.MediaItem
 import com.nanzstream.nanas.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.jsoup.Jsoup
@@ -169,25 +171,67 @@ object WebtoonScraper {
 
         val genre = doc.selectFirst(".genre, h2.genre")?.text()?.trim() ?: "Webtoon"
 
-        val chapters = mutableListOf<MangaChapterItem>()
-        doc.select("li[id^='episode_'], #_episodeList li, ul#_listUl li, .detail_lst li").forEach { li ->
-            val a = li.selectFirst("a[href*='viewer']")
-            val viewerHref = a?.attr("href") ?: return@forEach
-            val epNum = Regex("""episode_no=(\d+)""").find(viewerHref)?.groupValues?.get(1)
-                ?: li.attr("data-episode-no")
-            val epTitle = li.selectFirst(".subj span, .subj")?.text()?.trim() ?: "Episode $epNum"
-            val date = li.selectFirst(".date")?.text()?.trim()
+        fun parseChaptersFromDoc(d: org.jsoup.nodes.Document): List<MangaChapterItem> {
+            val list = mutableListOf<MangaChapterItem>()
+            d.select("li[id^='episode_'], #_episodeList li, ul#_listUl li, .detail_lst li").forEach { li ->
+                val a = li.selectFirst("a[href*='viewer']")
+                val viewerHref = a?.attr("href") ?: return@forEach
+                val epNum = Regex("""episode_no=(\d+)""").find(viewerHref)?.groupValues?.get(1)
+                    ?: li.attr("data-episode-no")
+                val epTitle = li.selectFirst(".subj span, .subj")?.text()?.trim() ?: "Episode $epNum"
+                val date = li.selectFirst(".date")?.text()?.trim()
 
-            val fullViewerUrl = if (viewerHref.startsWith("http")) viewerHref else "$BASE_URL$viewerHref"
+                val fullViewerUrl = if (viewerHref.startsWith("http")) viewerHref else "$BASE_URL$viewerHref"
 
-            chapters.add(
-                MangaChapterItem(
-                    id = fullViewerUrl,
-                    title = epTitle,
-                    subtitle = epNum.ifEmpty { null }?.let { "Ep $it" },
-                    date = date
+                list.add(
+                    MangaChapterItem(
+                        id = fullViewerUrl,
+                        title = epTitle,
+                        subtitle = epNum.ifEmpty { null }?.let { "Ep $it" },
+                        date = date
+                    )
                 )
-            )
+            }
+            return list
+        }
+
+        val allChapters = mutableListOf<MangaChapterItem>()
+        val page1Chapters = parseChaptersFromDoc(doc)
+        allChapters.addAll(page1Chapters)
+
+        // Calculate total pages based on highest episode number found on page 1
+        val firstEpNum = page1Chapters.firstOrNull()?.subtitle?.replace("Ep ", "")?.trim()?.toIntOrNull()
+            ?: page1Chapters.firstOrNull()?.title?.let { Regex("""\b(\d+)\b""").find(it)?.groupValues?.get(1)?.toIntOrNull() }
+            ?: 10
+
+        val estTotalPages = if (firstEpNum > 10) minOf((firstEpNum + 9) / 10, 40) else 1
+
+        if (estTotalPages > 1) {
+            val cleanUrl = targetUrl.replace(Regex("""[&?]page=\d+"""), "")
+            val separator = if (cleanUrl.contains("?")) "&" else "?"
+
+            // Fetch in batches of 6 parallel requests
+            val pagesToFetch = (2..estTotalPages).toList()
+            for (batch in pagesToFetch.chunked(6)) {
+                val batchResults = batch.map { page ->
+                    async {
+                        try {
+                            val pageHtml = fetchHtml("$cleanUrl${separator}page=$page")
+                            if (pageHtml != null) parseChaptersFromDoc(Jsoup.parse(pageHtml)) else emptyList()
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+                    }
+                }.awaitAll()
+
+                for (chList in batchResults) {
+                    for (ch in chList) {
+                        if (!allChapters.any { it.id == ch.id }) {
+                            allChapters.add(ch)
+                        }
+                    }
+                }
+            }
         }
 
         MediaDetail(
@@ -198,8 +242,8 @@ object WebtoonScraper {
             synopsis = synopsis,
             genres = listOf(genre),
             status = "Ongoing",
-            totalEpisodes = "${chapters.size} Episode",
-            chapters = chapters
+            totalEpisodes = "${allChapters.size} Episode",
+            chapters = allChapters
         )
     }
 

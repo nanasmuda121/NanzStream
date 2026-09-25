@@ -49,8 +49,28 @@ class MediaRepository {
 
     suspend fun getAnimeLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
         try {
-            val res = AnimeScraper.getLatest(page)
-            if (res.isNotEmpty()) return@withContext res
+            val samehadakuDeferred = async { try { AnimeScraper.getLatest(page) } catch (e: Exception) { emptyList() } }
+            val otakudesuDeferred = async { try { OtakudesuScraper.getLatest(page) } catch (e: Exception) { emptyList() } }
+
+            val samehadaku = samehadakuDeferred.await()
+            val otakudesu = otakudesuDeferred.await()
+
+            val merged = mutableListOf<MediaItem>()
+            val seen = mutableSetOf<String>()
+            fun norm(s: String) = s.lowercase().replace(Regex("[^a-z0-9]"), "")
+
+            val maxLen = maxOf(samehadaku.size, otakudesu.size)
+            for (i in 0 until maxLen) {
+                if (i < samehadaku.size) {
+                    val item = samehadaku[i]
+                    if (seen.add(norm(item.title))) merged.add(item)
+                }
+                if (i < otakudesu.size) {
+                    val item = otakudesu[i]
+                    if (seen.add(norm(item.title))) merged.add(item)
+                }
+            }
+            if (merged.isNotEmpty()) return@withContext merged
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -121,15 +141,40 @@ class MediaRepository {
             val results = mutableListOf<MediaItem>()
             try {
                 when (category) {
-                    CategoryType.ANIME -> results.addAll(AnimeScraper.search(query, page))
+                    CategoryType.ANIME -> {
+                        val samehadakuDeferred = async { try { AnimeScraper.search(query, page) } catch (e: Exception) { emptyList() } }
+                        val otakudesuDeferred = async { try { OtakudesuScraper.search(query) } catch (e: Exception) { emptyList() } }
+
+                        val samehadaku = samehadakuDeferred.await()
+                        val otakudesu = otakudesuDeferred.await()
+
+                        val seen = mutableSetOf<String>()
+                        fun norm(s: String) = s.lowercase().replace(Regex("[^a-z0-9]"), "")
+
+                        for (item in samehadaku) {
+                            if (seen.add(norm(item.title))) results.add(item)
+                        }
+                        for (item in otakudesu) {
+                            if (seen.add(norm(item.title))) results.add(item)
+                        }
+                    }
                     CategoryType.DONGHUA -> results.addAll(DonghuaScraper.search(query, page))
                     CategoryType.MANGA -> results.addAll(WebtoonScraper.search(query))
                     CategoryType.ALL -> {
                         val animeAsync = async { AnimeScraper.search(query, 1) }
+                        val otakuAsync = async { OtakudesuScraper.search(query) }
                         val donghuaAsync = async { DonghuaScraper.search(query, 1) }
                         val webtoonAsync = async { WebtoonScraper.search(query) }
 
-                        results.addAll(animeAsync.await())
+                        val seen = mutableSetOf<String>()
+                        fun norm(s: String) = s.lowercase().replace(Regex("[^a-z0-9]"), "")
+
+                        for (item in animeAsync.await()) {
+                            if (seen.add(norm(item.title))) results.add(item)
+                        }
+                        for (item in otakuAsync.await()) {
+                            if (seen.add(norm(item.title))) results.add(item)
+                        }
                         results.addAll(donghuaAsync.await())
                         results.addAll(webtoonAsync.await())
                     }
@@ -145,7 +190,13 @@ class MediaRepository {
         withContext(Dispatchers.IO) {
             try {
                 when (category) {
-                    CategoryType.ANIME -> AnimeScraper.getDetail(idOrSlug)
+                    CategoryType.ANIME -> {
+                        if (idOrSlug.contains("otakudesu")) {
+                            OtakudesuScraper.getDetail(idOrSlug)
+                        } else {
+                            AnimeScraper.getDetail(idOrSlug)
+                        }
+                    }
                     CategoryType.DONGHUA -> DonghuaScraper.getDetail(idOrSlug)
                     CategoryType.MANGA -> WebtoonScraper.getDetail(idOrSlug)
                     CategoryType.VOD -> CubMuScraper.getVodDetail(idOrSlug)
@@ -161,7 +212,13 @@ class MediaRepository {
         withContext(Dispatchers.IO) {
             try {
                 when (category) {
-                    CategoryType.ANIME -> AnimeScraper.getStream(targetUrlOrSlug)
+                    CategoryType.ANIME -> {
+                        if (targetUrlOrSlug.contains("otakudesu")) {
+                            OtakudesuScraper.getStream(targetUrlOrSlug)
+                        } else {
+                            AnimeScraper.getStream(targetUrlOrSlug)
+                        }
+                    }
                     CategoryType.DONGHUA -> DonghuaScraper.getStream(targetUrlOrSlug)
                     CategoryType.LIVETV -> CubMuScraper.getLiveStream(targetUrlOrSlug)
                     CategoryType.VOD -> CubMuScraper.getVodStream(targetUrlOrSlug)

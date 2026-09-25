@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.nanzstream.nanas.ui.components.PortalGatewayFooter
 import com.nanzstream.nanas.ui.components.PortalGatewayHeader
 import com.nanzstream.nanas.ui.components.PortalGatewayIntro
+import com.nanzstream.nanas.ui.components.SupportDeveloperBanner
 import com.nanzstream.nanas.ui.components.UniverseCard
 import com.nanzstream.nanas.ui.theme.CanvasBlack
 
@@ -30,6 +31,11 @@ fun HomeScreen(
         contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // 0. Support Developer WhatsApp Channel Pop-up & Banner (Top of Portal)
+        item {
+            SupportDeveloperBanner()
+        }
+
         // 1. Portal Gateway Header (NanzStream + System Online)
         item {
             PortalGatewayHeader()
