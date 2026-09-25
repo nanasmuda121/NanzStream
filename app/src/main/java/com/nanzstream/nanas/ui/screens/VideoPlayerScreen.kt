@@ -569,7 +569,6 @@ fun VideoPlayerScreen(
                     CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
                 }
             }
-        }
 
             // Floating Controls for Fullscreen Toggle overlay
             if (isFullscreen) {
