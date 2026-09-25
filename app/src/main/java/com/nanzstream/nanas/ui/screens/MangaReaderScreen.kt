@@ -223,15 +223,19 @@ fun MangaPageView(page: MangaPageItem) {
                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
             }
         } else {
-            // Direct WebP Image via Coil
+            // Direct Webtoon Image via Coil with explicit referer
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(page.url)
+                    .addHeader("Referer", "https://www.webtoons.com/")
+                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
                     .crossfade(true)
                     .build(),
                 contentDescription = "Halaman ${page.page}",
                 contentScale = ContentScale.FillWidth,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
             )
         }
     }

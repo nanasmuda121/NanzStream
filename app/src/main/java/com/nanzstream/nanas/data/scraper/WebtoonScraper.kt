@@ -169,31 +169,25 @@ object WebtoonScraper {
         val html = fetchHtml(viewerUrl, referer = "$BASE_URL/id/") ?: return@withContext emptyList()
         val doc = Jsoup.parse(html)
         val pages = mutableListOf<MangaPageItem>()
+        val seenUrls = mutableSetOf<String>()
 
-        doc.select("#_imageList img, ._images, img[data-url]").forEachIndexed { idx, img ->
-            val pageUrl = img.attr("data-url").ifEmpty { img.attr("src") }
-            if (pageUrl.startsWith("http") && !pageUrl.contains("warning") && !pageUrl.contains("blank") && !pageUrl.contains(".svg")) {
+        doc.select("#_imageList img, .viewer_lst img, .viewer_img img").forEach { img ->
+            val pageUrl = img.attr("data-url").ifBlank { img.attr("src") }.trim()
+            if (pageUrl.startsWith("http")
+                && !pageUrl.contains("transparency")
+                && !pageUrl.contains("bg_transparency")
+                && !pageUrl.contains("warning")
+                && !pageUrl.contains("blank")
+                && !pageUrl.contains(".svg")
+                && !seenUrls.contains(pageUrl)
+            ) {
+                seenUrls.add(pageUrl)
                 pages.add(
                     MangaPageItem(
-                        page = idx + 1,
+                        page = pages.size + 1,
                         url = pageUrl
                     )
                 )
-            }
-        }
-
-        // Fallback: If no images found with class, scan all images in viewer container
-        if (pages.isEmpty()) {
-            doc.select(".viewer_lst img, .viewer_img img").forEachIndexed { idx, img ->
-                val pageUrl = img.attr("data-url").ifEmpty { img.attr("src") }
-                if (pageUrl.startsWith("http") && !pageUrl.contains(".svg")) {
-                    pages.add(
-                        MangaPageItem(
-                            page = idx + 1,
-                            url = pageUrl
-                        )
-                    )
-                }
             }
         }
 

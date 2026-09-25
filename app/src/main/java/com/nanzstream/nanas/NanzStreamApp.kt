@@ -23,6 +23,7 @@ class NanzStreamApp : Application(), ImageLoaderFactory {
         super.onCreate()
         instance = this
         storage = StorageManager(this)
+        coil.Coil.setImageLoader(newImageLoader())
     }
 
     override fun newImageLoader(): ImageLoader {
