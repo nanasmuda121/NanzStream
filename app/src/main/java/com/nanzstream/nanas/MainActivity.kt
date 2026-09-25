@@ -78,6 +78,9 @@ class MainActivity : ComponentActivity() {
                                         "anime" -> navController.navigate("universe_anime")
                                         "manga", "komik" -> navController.navigate("universe_komik")
                                         "donghua" -> navController.navigate("universe_donghua")
+                                        "drachina" -> navController.navigate("universe_drachina")
+                                        "movies" -> navController.navigate("universe_movies")
+                                        "youtube" -> navController.navigate("universe_youtube")
                                         else -> navController.navigate("universe_anime")
                                     }
                                 },
@@ -131,7 +134,46 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        // 5. Sub-App Kategori: Live TV Universe (TV Indonesia) dengan Navbar Khusus
+                        // 5. Sub-App Kategori: Drama China Universe (Dracinema) dengan Navbar Khusus
+                        composable("universe_drachina") {
+                            DrachinaPortalScreen(
+                                repository = repository,
+                                onBackToPortal = { navController.popBackStack() },
+                                onItemClick = { item ->
+                                    navController.navigate(
+                                        Screen.Detail.createRoute("drachina", item.slug ?: item.id)
+                                    )
+                                }
+                            )
+                        }
+
+                        // 6. Sub-App Kategori: Movies Universe (TheMovieBox) dengan Navbar Khusus
+                        composable("universe_movies") {
+                            MovieBoxPortalScreen(
+                                repository = repository,
+                                onBackToPortal = { navController.popBackStack() },
+                                onItemClick = { item ->
+                                    navController.navigate(
+                                        Screen.Detail.createRoute("movies", item.slug ?: item.id)
+                                    )
+                                }
+                            )
+                        }
+
+                        // 7. Sub-App Kategori: YouTube Universe (NewPipe Engine) dengan Navbar Khusus
+                        composable("universe_youtube") {
+                            YouTubePortalScreen(
+                                repository = repository,
+                                onBackToPortal = { navController.popBackStack() },
+                                onItemClick = { item ->
+                                    navController.navigate(
+                                        Screen.Detail.createRoute("youtube", item.id)
+                                    )
+                                }
+                            )
+                        }
+
+                        // 8. Sub-App Kategori: Live TV Universe (TV Indonesia) dengan Navbar Khusus
                         composable("universe_livetv") {
                             LiveTvPortalScreen(
                                 repository = repository,
@@ -158,21 +200,24 @@ class MainActivity : ComponentActivity() {
                                 repository = repository,
                                 onBackClick = { navController.popBackStack() },
                                 onPlayEpisode = { detail, ep ->
-                                    val isMovie = detail.title.contains("Movie", ignoreCase = true) || (detail.episodes.size <= 1 && detail.episodes.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
-                                    val epItemTitle = if (ep.title.equals("Episode 0", ignoreCase = true) || ep.episodeNumber == "0") {
-                                        if (isMovie) "Full Movie" else "Episode 1"
-                                    } else {
-                                        ep.title
+                                    val isMovie = (detail.category == CategoryType.MOVIES) || detail.title.contains("Movie", ignoreCase = true) || (detail.episodes.size <= 1 && detail.episodes.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
+                                    val isYouTube = detail.category == CategoryType.YOUTUBE
+                                    val epItemTitle = when {
+                                        isYouTube -> ep.title
+                                        isMovie -> "Full Movie"
+                                        ep.title.equals("Episode 0", ignoreCase = true) || ep.episodeNumber == "0" -> "Episode 1"
+                                        else -> ep.title
                                     }
                                     val parsedEp = ep.episodeNumber.toIntOrNull()
                                         ?: Regex("""\b(\d+)\b""").find(ep.title)?.groupValues?.get(1)?.toIntOrNull()
                                         ?: Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(ep.url)?.groupValues?.get(1)?.toIntOrNull()
                                         ?: 1
                                     val safeEpisode = if (parsedEp <= 0) 1 else parsedEp
+                                    val streamTitle = if (isYouTube) ep.title else "${detail.title} - $epItemTitle"
                                     navController.navigate(
                                         Screen.Player.createRoute(
                                             category = detail.category.id,
-                                            title = "${detail.title} - $epItemTitle",
+                                            title = streamTitle,
                                             targetUrl = ep.url,
                                             episode = safeEpisode
                                         )
