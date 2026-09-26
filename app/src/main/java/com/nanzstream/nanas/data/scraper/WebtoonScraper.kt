@@ -27,19 +27,22 @@ object WebtoonScraper {
                     .url(url)
                     .header("User-Agent", USER_AGENT)
                     .header("Referer", referer)
+                    .header("Cookie", "locale=id; needGDPR=false; countryCode=ID; pagGDPR=true")
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
                     .header("Accept-Language", "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7")
                     .build()
-                val res = ApiClient.okHttpClient.newCall(req).execute()
-                if (res.isSuccessful) {
-                    res.body?.string()
-                } else if (res.code in 300..399) {
-                    val loc = res.header("Location")
-                    if (!loc.isNullOrBlank()) {
-                        val nextUrl = if (loc.startsWith("http")) loc else "$BASE_URL$loc"
-                        fetchHtml(nextUrl, referer)
-                    } else null
-                } else {
-                    null
+                ApiClient.okHttpClient.newCall(req).execute().use { res ->
+                    if (res.isSuccessful) {
+                        res.body?.string()
+                    } else if (res.code in 300..399) {
+                        val loc = res.header("Location")
+                        if (!loc.isNullOrBlank()) {
+                            val nextUrl = if (loc.startsWith("http")) loc else "$BASE_URL$loc"
+                            fetchHtml(nextUrl, referer)
+                        } else null
+                    } else {
+                        null
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()

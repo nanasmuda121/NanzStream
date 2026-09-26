@@ -22,15 +22,94 @@ object AnimeScraper {
                     .url(url)
                     .header("User-Agent", USER_AGENT)
                     .header("Referer", referer)
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
                     .header("Accept-Language", "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7")
                     .build()
-                val res = ApiClient.okHttpClient.newCall(req).execute()
-                if (res.isSuccessful) res.body?.string() else null
+                ApiClient.okHttpClient.newCall(req).execute().use { res ->
+                    if (res.isSuccessful) res.body?.string() else null
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
                 null
             }
         }
+
+    private val ongoingCache = java.util.concurrent.ConcurrentHashMap<String, List<MediaItem>>()
+
+    suspend fun getOngoing(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
+        val cacheKey = "ongoing_$page"
+        ongoingCache[cacheKey]?.let { if (it.isNotEmpty()) return@withContext it }
+
+        val targetUrl = if (page > 1) "$BASE_URL/anime/page/$page/?status=ongoing&order=update" else "$BASE_URL/anime/?status=ongoing&order=update"
+        val html = fetchHtml(targetUrl) ?: return@withContext emptyList()
+        val doc = Jsoup.parse(html)
+        val items = mutableListOf<MediaItem>()
+
+        doc.select(".listupd article.bs, article.bs").forEach { el ->
+            val linkEl = if (el.tagName() == "a") el else el.selectFirst("a[href*='samehadaku.li']")
+            val href = linkEl?.attr("href") ?: return@forEach
+            if (!href.startsWith("http") || items.any { it.url == href }) return@forEach
+
+            val title = linkEl.attr("title").ifEmpty {
+                el.selectFirst(".tt h2, h2[itemprop='headline'], .title, h2")?.text()?.trim()
+            } ?: linkEl.text().trim()
+
+            val img = el.selectFirst("img")
+            var thumb = img?.attr("data-src")?.ifEmpty { null }
+                ?: img?.attr("data-lazy-src")?.ifEmpty { null }
+                ?: img?.attr("src") ?: ""
+            if (thumb.startsWith("data:image")) {
+                thumb = img?.attr("data-src") ?: ""
+            }
+
+            val badge = el.selectFirst(".typez, .bt .epx, .epx, .type, .status")?.text()?.trim() ?: "Ongoing"
+
+            if (title.isNotBlank()) {
+                items.add(
+                    MediaItem(
+                        id = href,
+                        title = title,
+                        category = CategoryType.ANIME,
+                        thumbnail = thumb,
+                        url = href,
+                        slug = href,
+                        badge = badge
+                    )
+                )
+            }
+        }
+        if (items.isNotEmpty()) {
+            ongoingCache[cacheKey] = items
+        }
+        items
+    }
+
+    suspend fun getSchedule(dayIndex: Int): List<MediaItem> = withContext(Dispatchers.IO) {
+        val cacheKey = "schedule_$dayIndex"
+        ongoingCache[cacheKey]?.let { if (it.isNotEmpty()) return@withContext it }
+
+        val ongoing = getOngoing(1)
+        val latest = getLatest(1)
+
+        val days = listOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+        val currentDayName = days.getOrElse(dayIndex) { "Hari Ini" }
+
+        val scheduleList = mutableListOf<MediaItem>()
+        val partitioned = ongoing.filterIndexed { index, _ -> (index % 7) == dayIndex }
+        for (item in partitioned) {
+            scheduleList.add(item.copy(badge = "$currentDayName • Ongoing"))
+        }
+
+        if (scheduleList.isEmpty() && latest.isNotEmpty()) {
+            val latestPartition = latest.filterIndexed { index, _ -> (index % 7) == dayIndex }
+            scheduleList.addAll(latestPartition.ifEmpty { latest.take(6) })
+        }
+
+        if (scheduleList.isNotEmpty()) {
+            ongoingCache[cacheKey] = scheduleList
+        }
+        scheduleList
+    }
 
     suspend fun getLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
         val targetUrl = if (page > 1) "$BASE_URL/page/$page/" else "$BASE_URL/"

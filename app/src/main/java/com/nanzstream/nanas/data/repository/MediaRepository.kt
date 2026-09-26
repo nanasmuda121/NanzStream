@@ -30,7 +30,12 @@ class MediaRepository {
         )
 
         try {
-            val anime = OtakudesuScraper.getLatest(1)
+            val anime = try {
+                val s = AnimeScraper.getLatest(1)
+                if (s.isNotEmpty()) s else OtakudesuScraper.getLatest(1)
+            } catch (e: Exception) {
+                OtakudesuScraper.getLatest(1)
+            }
             val donghua = DonghuaScraper.getLatest(1)
             val webtoon = WebtoonScraper.getHome()
 
@@ -48,6 +53,12 @@ class MediaRepository {
     }
 
     suspend fun getAnimeLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
+        try {
+            val res = AnimeScraper.getLatest(page)
+            if (res.isNotEmpty()) return@withContext res
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         try {
             val res = OtakudesuScraper.getLatest(page)
             if (res.isNotEmpty()) return@withContext res
@@ -88,6 +99,12 @@ class MediaRepository {
     }
 
     suspend fun getAnimeSchedule(dayIndex: Int): List<MediaItem> = withContext(Dispatchers.IO) {
+        try {
+            val res = AnimeScraper.getSchedule(dayIndex)
+            if (res.isNotEmpty()) return@withContext res
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         try {
             val res = OtakudesuScraper.getSchedule(dayIndex)
             if (res.isNotEmpty()) return@withContext res
@@ -173,20 +190,30 @@ class MediaRepository {
             val results = mutableListOf<MediaItem>()
             try {
                 when (category) {
-                    CategoryType.ANIME -> results.addAll(OtakudesuScraper.search(query))
+                    CategoryType.ANIME -> {
+                        val sh = AnimeScraper.search(query, page)
+                        if (sh.isNotEmpty()) results.addAll(sh) else results.addAll(OtakudesuScraper.search(query))
+                    }
                     CategoryType.DONGHUA -> results.addAll(DonghuaScraper.search(query, page))
                     CategoryType.MANGA -> results.addAll(WebtoonScraper.search(query))
                     CategoryType.DRACHINA -> results.addAll(DracinemaScraper.search(query))
                     CategoryType.MOVIES -> results.addAll(MovieBoxScraper.search(query))
                     CategoryType.YOUTUBE -> results.addAll(YouTubeScraper.search(query))
                     CategoryType.ALL -> {
-                        val otakuAsync = async { OtakudesuScraper.search(query) }
+                        val animeAsync = async {
+                            try {
+                                val s = AnimeScraper.search(query, 1)
+                                if (s.isNotEmpty()) s else OtakudesuScraper.search(query)
+                            } catch (e: Exception) {
+                                OtakudesuScraper.search(query)
+                            }
+                        }
                         val donghuaAsync = async { DonghuaScraper.search(query, 1) }
                         val webtoonAsync = async { WebtoonScraper.search(query) }
                         val drachinAsync = async { DracinemaScraper.search(query) }
                         val movieAsync = async { MovieBoxScraper.search(query) }
                         val ytAsync = async { YouTubeScraper.search(query) }
-                        results.addAll(otakuAsync.await())
+                        results.addAll(animeAsync.await())
                         results.addAll(donghuaAsync.await())
                         results.addAll(webtoonAsync.await())
                         results.addAll(drachinAsync.await())
@@ -221,8 +248,13 @@ class MediaRepository {
             try {
                 when (category) {
                     CategoryType.ANIME -> {
-                        val otList = OtakudesuScraper.search(cleanQ).take(8).map { it.title }
-                        otList.forEach { add(it) }
+                        val shList = AnimeScraper.search(cleanQ, 1).take(8).map { it.title }
+                        if (shList.isNotEmpty()) {
+                            shList.forEach { add(it) }
+                        } else {
+                            val otList = OtakudesuScraper.search(cleanQ).take(8).map { it.title }
+                            otList.forEach { add(it) }
+                        }
                     }
                     CategoryType.DONGHUA -> {
                         val dhList = DonghuaScraper.search(cleanQ, 1).take(6).map { it.title }
@@ -245,7 +277,12 @@ class MediaRepository {
                         ytList.forEach { add(it) }
                     }
                     else -> {
-                        val anime = OtakudesuScraper.search(cleanQ).take(2).map { it.title }
+                        val anime = try {
+                            val s = AnimeScraper.search(cleanQ, 1).take(2).map { it.title }
+                            if (s.isNotEmpty()) s else OtakudesuScraper.search(cleanQ).take(2).map { it.title }
+                        } catch (e: Exception) {
+                            OtakudesuScraper.search(cleanQ).take(2).map { it.title }
+                        }
                         val dh = DonghuaScraper.search(cleanQ, 1).take(2).map { it.title }
                         val wt = WebtoonScraper.search(cleanQ).take(2).map { it.title }
                         val dc = DracinemaScraper.search(cleanQ).take(2).map { it.title }
@@ -264,7 +301,13 @@ class MediaRepository {
         withContext(Dispatchers.IO) {
             try {
                 when (category) {
-                    CategoryType.ANIME -> OtakudesuScraper.getDetail(idOrSlug)
+                    CategoryType.ANIME -> {
+                        if (idOrSlug.contains("samehadaku", ignoreCase = true) || !idOrSlug.contains("otakudesu", ignoreCase = true)) {
+                            val detail = AnimeScraper.getDetail(idOrSlug)
+                            if (detail != null) return@withContext detail
+                        }
+                        OtakudesuScraper.getDetail(idOrSlug)
+                    }
                     CategoryType.DONGHUA -> DonghuaScraper.getDetail(idOrSlug)
                     CategoryType.MANGA -> WebtoonScraper.getDetail(idOrSlug)
                     CategoryType.DRACHINA -> DracinemaScraper.getDetail(idOrSlug)
@@ -285,7 +328,28 @@ class MediaRepository {
                 when (category) {
                     CategoryType.ANIME -> {
                         var epUrl = targetUrlOrSlug
-                        // If given a series page (e.g. /anime/ or does not contain /episode/), resolve episode URL from detail
+                        val isSamehadaku = epUrl.contains("samehadaku", ignoreCase = true) || !epUrl.contains("otakudesu", ignoreCase = true)
+
+                        if (isSamehadaku) {
+                            if (epUrl.contains("/anime/", ignoreCase = true) || (!epUrl.contains("episode-", ignoreCase = true) && !epUrl.contains("-episode-", ignoreCase = true))) {
+                                val detail = AnimeScraper.getDetail(epUrl)
+                                val foundEp = detail?.episodes?.find { it.episodeNumber.toIntOrNull() == episode }
+                                    ?: detail?.episodes?.getOrNull((episode - 1).coerceAtLeast(0))
+                                    ?: detail?.episodes?.firstOrNull()
+                                if (foundEp != null && foundEp.url.isNotBlank()) {
+                                    epUrl = foundEp.url
+                                }
+                            } else if (epUrl.contains("episode-", ignoreCase = true)) {
+                                val urlEpNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(epUrl)?.groupValues?.get(1)?.toIntOrNull()
+                                if (urlEpNum != null && urlEpNum != episode && episode > 0) {
+                                    epUrl = epUrl.replace(Regex("""episode-\d+""", RegexOption.IGNORE_CASE), "episode-$episode")
+                                }
+                            }
+                            val stream = AnimeScraper.getStream(epUrl)
+                            if (stream != null) return@withContext stream
+                        }
+
+                        // Otakudesu fallback
                         if (epUrl.contains("/anime/", ignoreCase = true) || !epUrl.contains("/episode/", ignoreCase = true)) {
                             val detail = OtakudesuScraper.getDetail(epUrl)
                             val foundEp = detail?.episodes?.find { it.episodeNumber.toIntOrNull() == episode }
@@ -295,7 +359,6 @@ class MediaRepository {
                                 epUrl = foundEp.url
                             }
                         } else if (epUrl.contains("episode-", ignoreCase = true)) {
-                            // If user explicitly navigated to a different episode number (e.g. Next Ep / Prev Ep)
                             val urlEpNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(epUrl)?.groupValues?.get(1)?.toIntOrNull()
                             if (urlEpNum != null && urlEpNum != episode && episode > 0) {
                                 epUrl = epUrl.replace(Regex("""episode-\d+""", RegexOption.IGNORE_CASE), "episode-$episode")
@@ -350,21 +413,23 @@ class MediaRepository {
     private fun getFallbackSpotlight(): List<MediaItem> = listOf(
         MediaItem(
             id = "spotlight_anime",
-            title = "World Is Dancing",
+            title = "Hell Mode: Gamer wa Hai Settei 2nd Season",
             category = CategoryType.ANIME,
-            thumbnail = "https://otakudesu.blog/wp-content/uploads/2026/06/158709.jpg",
-            slug = "https://otakudesu.blog/anime/world-is-dancing-sub-indo/",
-            badge = "Episode 12",
-            synopsis = "Perjalanan ritmik dan petualangan seni tari dalam dunia penuh pesona.",
-            rating = "8.4",
+            thumbnail = "https://i1.wp.com/samehadaku.li/wp-content/uploads/2026/07/1783087205-9381-156314.jpg",
+            slug = "https://samehadaku.li/anime/hell-mode-yarikomizuki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-2nd-season/",
+            badge = "Episode 13",
+            synopsis = "Petualangan gamer mode neraka di dunia lain dengan kasta terendah.",
+            rating = "8.6",
             year = "2026",
             genres = listOf("Action", "Fantasy")
         )
     )
 
     private fun getFallbackAnime(): List<MediaItem> = listOf(
-        MediaItem("anime_1", "World Is Dancing", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/06/158709.jpg", "https://otakudesu.blog/anime/world-is-dancing-sub-indo/", "https://otakudesu.blog/anime/world-is-dancing-sub-indo/", "Ep 12"),
-        MediaItem("anime_2", "One Piece", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2021/05/One-Piece-Sub-Indo.jpg", "https://otakudesu.blog/anime/1piece-sub-indo/", "https://otakudesu.blog/anime/1piece-sub-indo/", "Ep 1179")
+        MediaItem("anime_1", "Hell Mode: Gamer wa Hai Settei 2nd Season", CategoryType.ANIME, "https://i1.wp.com/samehadaku.li/wp-content/uploads/2026/07/1783087205-9381-156314.jpg", "https://samehadaku.li/anime/hell-mode-yarikomizuki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-2nd-season/", "https://samehadaku.li/anime/hell-mode-yarikomizuki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-2nd-season/", "Ep 13"),
+        MediaItem("anime_2", "One Piece", CategoryType.ANIME, "https://i1.wp.com/samehadaku.li/wp-content/uploads/2020/05/1589710323-5330-14282.jpg", "https://samehadaku.li/anime/one-piece/", "https://samehadaku.li/anime/one-piece/", "Ep 1179"),
+        MediaItem("anime_3", "Tensei shitara Slime Datta Ken 4th Season", CategoryType.ANIME, "https://i0.wp.com/samehadaku.li/wp-content/uploads/2026/07/1784307424-1071-156329.jpg", "https://samehadaku.li/anime/tensei-shitara-slime-datta-ken-4th-season/", "https://samehadaku.li/anime/tensei-shitara-slime-datta-ken-4th-season/", "Ongoing"),
+        MediaItem("anime_4", "Bleach: Sennen Kessen-hen", CategoryType.ANIME, "https://i2.wp.com/samehadaku.li/wp-content/uploads/2026/07/1783087512-3454-154997.jpg", "https://samehadaku.li/anime/bleach-sennen-kessen-hen-soukoku-tan/", "https://samehadaku.li/anime/bleach-sennen-kessen-hen-soukoku-tan/", "Ongoing")
     )
 
     private fun getFallbackDonghua(): List<MediaItem> = listOf(
@@ -380,10 +445,10 @@ class MediaRepository {
         val days = listOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
         val d = days.getOrElse(dayIndex) { "Senin" }
         return listOf(
-            MediaItem("fb_ani_1", "World Is Dancing", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/06/158709.jpg", "https://otakudesu.blog/anime/world-is-dancing-sub-indo/", "https://otakudesu.blog/anime/world-is-dancing-sub-indo/", "$d • Ep 12"),
-            MediaItem("fb_ani_2", "Grand Blue Season 3", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/06/158709.jpg", "https://otakudesu.blog/anime/grand-blue-s3-sub-indo/", "https://otakudesu.blog/anime/grand-blue-s3-sub-indo/", "$d • Ep 10"),
-            MediaItem("fb_ani_3", "One Piece", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2021/05/One-Piece-Sub-Indo.jpg", "https://otakudesu.blog/anime/1piece-sub-indo/", "https://otakudesu.blog/anime/1piece-sub-indo/", "$d • Ep 1179"),
-            MediaItem("fb_ani_4", "Dr. Stone Science Future", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/Gaikotsu-Kishi-sama-Tadaima-Isekai-e-Odekakechuu-Season-2-Sub-Indo.jpg", "https://otakudesu.blog/anime/ds-future-part3-sub-indo/", "https://otakudesu.blog/anime/ds-future-part3-sub-indo/", "$d • Ep 6")
+            MediaItem("fb_ani_1", "Hell Mode: Gamer wa Hai Settei", CategoryType.ANIME, "https://i1.wp.com/samehadaku.li/wp-content/uploads/2026/07/1783087205-9381-156314.jpg", "https://samehadaku.li/anime/hell-mode-yarikomizuki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-2nd-season/", "https://samehadaku.li/anime/hell-mode-yarikomizuki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-2nd-season/", "$d • Ep 13"),
+            MediaItem("fb_ani_2", "Tensei shitara Slime Datta Ken 4th", CategoryType.ANIME, "https://i0.wp.com/samehadaku.li/wp-content/uploads/2026/07/1784307424-1071-156329.jpg", "https://samehadaku.li/anime/tensei-shitara-slime-datta-ken-4th-season/", "https://samehadaku.li/anime/tensei-shitara-slime-datta-ken-4th-season/", "$d • Ongoing"),
+            MediaItem("fb_ani_3", "One Piece", CategoryType.ANIME, "https://i1.wp.com/samehadaku.li/wp-content/uploads/2020/05/1589710323-5330-14282.jpg", "https://samehadaku.li/anime/one-piece/", "https://samehadaku.li/anime/one-piece/", "$d • Ep 1179"),
+            MediaItem("fb_ani_4", "Bleach: Sennen Kessen-hen", CategoryType.ANIME, "https://i2.wp.com/samehadaku.li/wp-content/uploads/2026/07/1783087512-3454-154997.jpg", "https://samehadaku.li/anime/bleach-sennen-kessen-hen-soukoku-tan/", "https://samehadaku.li/anime/bleach-sennen-kessen-hen-soukoku-tan/", "$d • Ongoing")
         )
     }
 

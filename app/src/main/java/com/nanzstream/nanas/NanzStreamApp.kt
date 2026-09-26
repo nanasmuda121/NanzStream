@@ -54,6 +54,7 @@ class NanzStreamApp : Application(), ImageLoaderFactory {
             }
             .okHttpClient {
                 OkHttpClient.Builder()
+                    .dns(ApiClient.resilientDns)
                     .addInterceptor { chain ->
                         val req = chain.request()
                         val urlStr = req.url.toString()
@@ -61,15 +62,17 @@ class NanzStreamApp : Application(), ImageLoaderFactory {
                             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
                         if (urlStr.contains("webtoon") || urlStr.contains("pstatic.net")) {
                             builder.header("Referer", "https://www.webtoons.com/")
-                        } else if (urlStr.contains("samehadaku")) {
+                        } else if (urlStr.contains("samehadaku") || urlStr.contains("wp.com")) {
                             builder.header("Referer", "https://samehadaku.li/")
                         } else if (urlStr.contains("anichin")) {
                             builder.header("Referer", "https://anichin.ro/")
+                        } else if (urlStr.contains("otakudesu")) {
+                            builder.header("Referer", "https://otakudesu.blog/")
                         }
                         chain.proceed(builder.build())
                     }
-                    .connectTimeout(15, TimeUnit.SECONDS)
-                    .readTimeout(15, TimeUnit.SECONDS)
+                    .connectTimeout(10, TimeUnit.SECONDS)
+                    .readTimeout(12, TimeUnit.SECONDS)
                     .build()
             }
             .respectCacheHeaders(false)

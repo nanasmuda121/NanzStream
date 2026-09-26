@@ -88,6 +88,7 @@ fun AnimePortalScreen(
                 val cached = scheduleCache[selectedDayIndex]
                 if (cached != null && cached.isNotEmpty() && refreshTrigger == 0) {
                     scheduleList = cached
+                    isLoading = false
                 } else {
                     isLoading = true
                     try {

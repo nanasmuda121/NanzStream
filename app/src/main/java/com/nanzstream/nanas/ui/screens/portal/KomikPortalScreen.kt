@@ -82,6 +82,7 @@ fun KomikPortalScreen(
             val cached = scheduleCache[selectedDayIndex]
             if (cached != null && cached.isNotEmpty() && refreshTrigger == 0) {
                 komikList = cached
+                isLoading = false
             } else {
                 isLoading = true
                 try {

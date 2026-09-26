@@ -31,19 +31,48 @@ object ApiClient {
         private val cache = ConcurrentHashMap<String, List<InetAddress>>()
 
         private val staticFallbacks = mapOf(
+            "samehadaku.li" to listOf("104.21.83.37", "172.67.211.38"),
+            "www.samehadaku.li" to listOf("104.21.83.37", "172.67.211.38"),
             "otakudesu.blog" to listOf("172.67.220.233", "104.21.94.77"),
+            "www.otakudesu.blog" to listOf("172.67.220.233", "104.21.94.77"),
             "anichin.ro" to listOf("104.21.76.66", "172.67.190.239"),
+            "www.anichin.ro" to listOf("104.21.76.66", "172.67.190.239"),
             "anichin.site" to listOf("104.21.13.75", "172.67.198.201"),
-            "www.webtoons.com" to listOf("203.104.174.129"),
+            "www.webtoons.com" to listOf("203.104.174.129", "210.89.168.51"),
+            "webtoons.com" to listOf("210.89.168.51", "110.93.151.163", "203.104.174.129"),
+            "webtoon-phinf.pstatic.net" to listOf("23.215.35.157", "23.215.35.166", "23.44.150.113", "23.44.150.100"),
             "dracinema.com" to listOf("172.67.194.112", "104.21.33.253"),
-            "themoviebox.online" to listOf("103.224.182.189")
+            "themoviebox.online" to listOf("103.224.182.189"),
+            "i0.wp.com" to listOf("192.0.77.2"),
+            "i1.wp.com" to listOf("192.0.77.2"),
+            "i2.wp.com" to listOf("192.0.77.2"),
+            "i3.wp.com" to listOf("192.0.77.2")
         )
 
         private fun isBlockedIp(ip: String): Boolean {
             return ip.startsWith("118.98.") ||
                     ip.startsWith("36.86.") ||
                     ip.startsWith("180.250.") ||
+                    ip.startsWith("125.160.") ||
+                    ip.startsWith("61.94.") ||
+                    ip.startsWith("202.134.") ||
+                    ip.startsWith("112.215.") ||
+                    ip.startsWith("202.152.") ||
+                    ip.startsWith("103.111.") ||
+                    ip.startsWith("124.81.") ||
+                    ip.startsWith("114.124.") ||
+                    ip.startsWith("114.125.") ||
+                    ip.startsWith("103.31.") ||
+                    ip.startsWith("103.253.") ||
                     ip.startsWith("10.") ||
+                    ip.startsWith("192.168.") ||
+                    ip.startsWith("172.16.") || ip.startsWith("172.17.") || ip.startsWith("172.18.") ||
+                    ip.startsWith("172.19.") || ip.startsWith("172.20.") || ip.startsWith("172.21.") ||
+                    ip.startsWith("172.22.") || ip.startsWith("172.23.") || ip.startsWith("172.24.") ||
+                    ip.startsWith("172.25.") || ip.startsWith("172.26.") || ip.startsWith("172.27.") ||
+                    ip.startsWith("172.28.") || ip.startsWith("172.29.") || ip.startsWith("172.30.") ||
+                    ip.startsWith("172.31.") ||
+                    ip.startsWith("169.254.") ||
                     ip.startsWith("127.") ||
                     ip == "0.0.0.0"
         }
@@ -51,33 +80,10 @@ object ApiClient {
         override fun lookup(hostname: String): List<InetAddress> {
             cache[hostname]?.let { return it }
 
-            // 1. Try system DNS first
-            try {
-                val systemAddrs = Dns.SYSTEM.lookup(hostname)
-                val validAddrs = systemAddrs.filter { !isBlockedIp(it.hostAddress ?: "") }
-                val v4 = validAddrs.filterIsInstance<Inet4Address>()
-                val candidates = if (v4.isNotEmpty()) v4 else validAddrs
-                if (candidates.isNotEmpty()) {
-                    cache[hostname] = candidates
-                    return candidates
-                }
-            } catch (e: Exception) {
-                // System DNS failed, fallback to DoH / static
-            }
+            val cleanHost = hostname.lowercase().trim()
 
-            // 2. Try Cloudflare DoH (1.1.1.1)
-            try {
-                val dohAddrs = resolveDoH(hostname)
-                if (dohAddrs.isNotEmpty()) {
-                    cache[hostname] = dohAddrs
-                    return dohAddrs
-                }
-            } catch (e: Exception) {
-                // DoH failed, fallback to static IPs
-            }
-
-            // 3. Fallback to preconfigured static IPs
-            staticFallbacks[hostname.lowercase()]?.let { ips ->
+            // 1. Direct Static Mapping for known media scrapers & CDNs (Instant 0ms, 100% bypass ISP DNS tampering)
+            staticFallbacks[cleanHost]?.let { ips ->
                 val staticAddrs = ips.mapNotNull {
                     try {
                         InetAddress.getByName(it)
@@ -91,15 +97,40 @@ object ApiClient {
                 }
             }
 
-            // Final attempt: rethrow or return system lookup
+            // 2. Try System DNS (filter out Indonesian telco block/landing page IPs)
+            try {
+                val systemAddrs = Dns.SYSTEM.lookup(hostname)
+                val validAddrs = systemAddrs.filter { !isBlockedIp(it.hostAddress ?: "") }
+                val v4 = validAddrs.filterIsInstance<Inet4Address>()
+                val candidates = if (v4.isNotEmpty()) v4 else validAddrs
+                if (candidates.isNotEmpty()) {
+                    cache[hostname] = candidates
+                    return candidates
+                }
+            } catch (e: Exception) {
+                // System DNS failed or poisoned
+            }
+
+            // 3. Fallback to Google DoH (with bounded 1.5s timeout)
+            try {
+                val dohAddrs = resolveDoH(cleanHost)
+                if (dohAddrs.isNotEmpty()) {
+                    cache[hostname] = dohAddrs
+                    return dohAddrs
+                }
+            } catch (e: Exception) {
+                // DoH failed
+            }
+
+            // Final attempt: fallback to system lookup
             return Dns.SYSTEM.lookup(hostname)
         }
 
         private fun resolveDoH(hostname: String): List<InetAddress> {
-            val url = URL("https://1.1.1.1/dns-query?name=$hostname&type=A")
+            val url = URL("https://dns.google/resolve?name=$hostname&type=A")
             val conn = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 3000
-                readTimeout = 3000
+                connectTimeout = 1500
+                readTimeout = 1500
                 setRequestProperty("Accept", "application/dns-json")
                 setRequestProperty("User-Agent", "Mozilla/5.0")
             }
@@ -128,9 +159,9 @@ object ApiClient {
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .dns(resilientDns)
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(12, TimeUnit.SECONDS)
+        .writeTimeout(12, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .followRedirects(true)
         .followSslRedirects(true)
