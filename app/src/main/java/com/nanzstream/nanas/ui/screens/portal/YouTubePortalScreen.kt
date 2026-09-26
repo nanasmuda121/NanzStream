@@ -419,7 +419,20 @@ fun YouTubePortalScreen(
                             items(homeVideos, key = { it.id }) { item ->
                                 YouTubeVideoCard(
                                     item = item,
-                                    onClick = { onItemClick(item) }
+                                    onClick = { onItemClick(item) },
+                                    onChannelClick = {
+                                        val chItem = MediaItem(
+                                            id = item.channelTitle ?: item.id,
+                                            title = item.channelTitle ?: "YouTube Channel",
+                                            category = CategoryType.YOUTUBE,
+                                            thumbnail = item.channelAvatar ?: item.thumbnail,
+                                            badge = "Channel",
+                                            genres = listOf("YouTube", "Channel"),
+                                            channelAvatar = item.channelAvatar,
+                                            channelTitle = item.channelTitle
+                                        )
+                                        onItemClick(chItem)
+                                    }
                                 )
                             }
                         }
@@ -462,7 +475,20 @@ fun YouTubePortalScreen(
                             items(trendingList, key = { it.id }) { item ->
                                 YouTubeVideoCard(
                                     item = item,
-                                    onClick = { onItemClick(item) }
+                                    onClick = { onItemClick(item) },
+                                    onChannelClick = {
+                                        val chItem = MediaItem(
+                                            id = item.channelTitle ?: item.id,
+                                            title = item.channelTitle ?: "YouTube Channel",
+                                            category = CategoryType.YOUTUBE,
+                                            thumbnail = item.channelAvatar ?: item.thumbnail,
+                                            badge = "Channel",
+                                            genres = listOf("YouTube", "Channel"),
+                                            channelAvatar = item.channelAvatar,
+                                            channelTitle = item.channelTitle
+                                        )
+                                        onItemClick(chItem)
+                                    }
                                 )
                             }
                         }
@@ -595,7 +621,20 @@ fun YouTubePortalScreen(
                                 items(searchResults, key = { it.id }) { item ->
                                     YouTubeVideoCard(
                                         item = item,
-                                        onClick = { onItemClick(item) }
+                                        onClick = { onItemClick(item) },
+                                        onChannelClick = {
+                                            val chItem = MediaItem(
+                                                id = item.channelTitle ?: item.id,
+                                                title = item.channelTitle ?: "YouTube Channel",
+                                                category = CategoryType.YOUTUBE,
+                                                thumbnail = item.channelAvatar ?: item.thumbnail,
+                                                badge = "Channel",
+                                                genres = listOf("YouTube", "Channel"),
+                                                channelAvatar = item.channelAvatar,
+                                                channelTitle = item.channelTitle
+                                            )
+                                            onItemClick(chItem)
+                                        }
                                     )
                                 }
                             }
@@ -628,6 +667,7 @@ fun YouTubePortalScreen(
 private fun YouTubeVideoCard(
     item: MediaItem,
     onClick: () -> Unit,
+    onChannelClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val channelName = item.channelTitle
@@ -680,32 +720,36 @@ private fun YouTubeVideoCard(
                 .padding(start = 12.dp, end = 4.dp, top = 10.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // Channel Avatar (from extractor)
-            if (!item.channelAvatar.isNullOrBlank()) {
-                AsyncImage(
-                    model = item.channelAvatar,
-                    contentDescription = channelName,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .border(0.5.dp, YtBorder, CircleShape)
-                )
-            } else {
-                // Channel initial circle fallback
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(YtChipInactive),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = channelName.firstOrNull()?.uppercase() ?: "Y",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
+            // Channel Avatar (clickable to navigate to Channel Detail)
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = onChannelClick != null) { onChannelClick?.invoke() }
+            ) {
+                if (!item.channelAvatar.isNullOrBlank()) {
+                    AsyncImage(
+                        model = item.channelAvatar,
+                        contentDescription = channelName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .border(0.5.dp, YtBorder, CircleShape)
                     )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(YtChipInactive),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = channelName.firstOrNull()?.uppercase() ?: "Y",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 

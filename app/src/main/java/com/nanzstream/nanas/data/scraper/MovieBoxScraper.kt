@@ -1,6 +1,7 @@
 package com.nanzstream.nanas.data.scraper
 
 import com.nanzstream.nanas.data.model.CategoryType
+import com.nanzstream.nanas.data.model.DownloadItem
 import com.nanzstream.nanas.data.model.EpisodeItem
 import com.nanzstream.nanas.data.model.MediaDetail
 import com.nanzstream.nanas.data.model.MediaItem
@@ -8,90 +9,124 @@ import com.nanzstream.nanas.data.model.StreamResult
 import com.nanzstream.nanas.data.model.StreamServerItem
 import com.nanzstream.nanas.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import org.jsoup.Jsoup
+import java.net.URLEncoder
 
 object MovieBoxScraper {
     private const val BASE_URL = "https://themoviebox.xyz/id"
     private const val API_BASE = "https://h5-api.aoneroom.com/wefeed-h5api-bff"
     private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
-    private var cachedHomeSubjects: List<MediaItem>? = null
+    private var cachedToken: String? = null
+    private var tokenExpiresAt: Long = 0L
+    private val tokenMutex = Mutex()
 
-    private suspend fun fetchHtml(url: String): String? = withContext(Dispatchers.IO) {
-        try {
-            val req = Request.Builder()
-                .url(url)
-                .header("User-Agent", USER_AGENT)
-                .header("Referer", "$BASE_URL/")
-                .build()
-            val resp = ApiClient.okHttpClient.newCall(req).execute()
-            if (resp.isSuccessful) resp.body?.string() else null
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
+    /**
+     * Bootstrap session token from detail endpoint
+     */
+    private suspend fun getSessionToken(forceRefresh: Boolean = false): String = tokenMutex.withLock {
+        val now = System.currentTimeMillis()
+        if (!forceRefresh && !cachedToken.isNullOrBlank() && tokenExpiresAt > now + 60000L) {
+            return@withLock cachedToken!!
         }
+
+        // Try getting token from known detail endpoints
+        val candidatePaths = listOf("lucifer-indonesian-YwF1Ii2H3B5", "avatar-WLDIi21IUBa", "the-furious-6lxRH1LLAe5")
+        for (dp in candidatePaths) {
+            try {
+                val req = Request.Builder()
+                    .url("$API_BASE/detail?detailPath=$dp")
+                    .header("User-Agent", USER_AGENT)
+                    .header("Accept", "application/json")
+                    .header("X-Request-Lang", "id")
+                    .header("Origin", "https://themoviebox.xyz")
+                    .header("Referer", "https://themoviebox.xyz/id")
+                    .build()
+
+                val resp = ApiClient.okHttpClient.newCall(req).execute()
+                val xUser = resp.header("x-user")
+                if (!xUser.isNullOrBlank()) {
+                    val token = JSONObject(xUser).optString("token")
+                    if (token.isNotBlank()) {
+                        cachedToken = token
+                        tokenExpiresAt = now + 6 * 3600 * 1000L
+                        return@withLock token
+                    }
+                }
+
+                val setCookies = resp.headers("set-cookie")
+                for (c in setCookies) {
+                    val match = Regex("""token=([^;]+)""").find(c)
+                    if (match != null) {
+                        val token = match.groupValues[1]
+                        cachedToken = token
+                        tokenExpiresAt = now + 6 * 3600 * 1000L
+                        return@withLock token
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        cachedToken ?: ""
     }
 
-    private suspend fun fetchJson(url: String): JSONObject? = withContext(Dispatchers.IO) {
+    /**
+     * 1. Get Trending Movies and Series
+     */
+    suspend fun getLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
+        val result = mutableListOf<MediaItem>()
         try {
             val req = Request.Builder()
-                .url(url)
+                .url("$API_BASE/subject/trending?page=$page&perPage=20")
                 .header("User-Agent", USER_AGENT)
-                .header("Referer", "$BASE_URL/")
+                .header("Accept", "application/json")
+                .header("X-Request-Lang", "id")
+                .header("Origin", "https://themoviebox.xyz")
+                .header("Referer", "https://themoviebox.xyz/id")
                 .build()
+
             val resp = ApiClient.okHttpClient.newCall(req).execute()
             if (resp.isSuccessful) {
                 val str = resp.body?.string()
-                if (!str.isNullOrBlank()) JSONObject(str) else null
-            } else null
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
+                if (!str.isNullOrBlank()) {
+                    val json = JSONObject(str)
+                    val data = json.optJSONObject("data")
+                    val list = data?.optJSONArray("subjectList") ?: data?.optJSONArray("items")
+                    if (list != null) {
+                        for (i in 0 until list.length()) {
+                            val item = list.getJSONObject(i)
+                            val title = item.optString("title")
+                            val detailPath = item.optString("detailPath")
+                            val subType = item.optInt("subjectType", 1)
+                            val coverUrl = item.optJSONObject("cover")?.optString("url") ?: ""
+                            val releaseDate = item.optString("releaseDate")
+                            val year = if (releaseDate.length >= 4) releaseDate.take(4) else ""
+                            val rating = item.optString("imdbRatingValue").ifBlank { "7.8" }
+                            val genres = item.optString("genre").split(",").map { it.trim() }.filter { it.isNotBlank() }
+                            val desc = item.optString("description")
 
-    suspend fun getLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
-        if (cachedHomeSubjects != null && page == 1) {
-            return@withContext cachedHomeSubjects!!
-        }
-
-        val items = mutableListOf<MediaItem>()
-        try {
-            val json = fetchJson("$API_BASE/home?host=themoviebox.xyz")
-            val data = json?.optJSONObject("data")
-            val opList = data?.optJSONArray("operatingList")
-            if (opList != null) {
-                for (i in 0 until opList.length()) {
-                    val op = opList.getJSONObject(i)
-                    val sectionTitle = op.optString("title")
-                    val subjectsArr = op.optJSONArray("subjects")
-                    if (subjectsArr != null) {
-                        for (j in 0 until subjectsArr.length()) {
-                            val sub = subjectsArr.getJSONObject(j)
-                            val title = sub.optString("title")
-                            val detailPath = sub.optString("detailPath")
-                            val coverObj = sub.optJSONObject("cover")
-                            val coverUrl = coverObj?.optString("url") ?: ""
-                            val rating = sub.optString("imdbRatingValue").ifBlank { "7.8" }
-                            val genres = sub.optString("genre").split(",").map { it.trim() }.filter { it.isNotBlank() }
-                            val year = sub.optString("releaseDate").take(4)
-
-                            if (title.isNotBlank() && detailPath.isNotBlank() && !items.any { it.slug == detailPath }) {
-                                items.add(
+                            if (title.isNotBlank() && detailPath.isNotBlank() && !result.any { it.slug == detailPath }) {
+                                result.add(
                                     MediaItem(
-                                        id = "$BASE_URL/detail/$detailPath",
+                                        id = detailPath,
                                         title = title,
                                         category = CategoryType.MOVIES,
                                         thumbnail = coverUrl,
                                         url = "$BASE_URL/detail/$detailPath",
                                         slug = detailPath,
-                                        badge = if (sectionTitle.contains("Indonesian", ignoreCase = true)) "Indo Movie" else "HD Movie",
+                                        badge = if (subType == 2) "Series" else "Movie",
                                         rating = rating,
                                         year = year,
-                                        genres = genres
+                                        genres = genres,
+                                        synopsis = desc
                                     )
                                 )
                             }
@@ -102,155 +137,196 @@ object MovieBoxScraper {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-
-        if (items.isNotEmpty()) {
-            cachedHomeSubjects = items
-        }
-        val perPage = 20
-        val startIndex = ((page - 1) * perPage).coerceAtLeast(0)
-        items.drop(startIndex).take(perPage)
+        result
     }
 
-    suspend fun search(query: String): List<MediaItem> = withContext(Dispatchers.IO) {
+    /**
+     * 2. Search Movies and Series
+     */
+    suspend fun search(query: String, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
         val cleanQ = query.trim()
         if (cleanQ.isBlank()) return@withContext emptyList()
 
-        val allItems = if (cachedHomeSubjects.isNullOrEmpty()) getLatest(1) else cachedHomeSubjects.orEmpty()
-        allItems.filter {
-            it.title.contains(cleanQ, ignoreCase = true) ||
-            it.genres.any { g -> g.contains(cleanQ, ignoreCase = true) }
+        try {
+            var token = getSessionToken()
+
+            suspend fun doSearch(t: String): JSONObject? {
+                val bodyJson = JSONObject().apply {
+                    put("keyword", cleanQ)
+                    put("page", page)
+                    put("perPage", 20)
+                    put("subjectType", 0)
+                }
+                val reqBuilder = Request.Builder()
+                    .url("$API_BASE/subject/search")
+                    .header("User-Agent", USER_AGENT)
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .header("X-Client-Info", "{\"timezone\":\"Asia/Jakarta\"}")
+                    .header("X-Request-Lang", "id")
+                    .header("Origin", "https://themoviebox.xyz")
+                    .header("Referer", "https://themoviebox.xyz/id/web/searchResult?keyword=${URLEncoder.encode(cleanQ, "UTF-8")}")
+                    .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
+
+                if (t.isNotBlank()) {
+                    reqBuilder.header("Authorization", "Bearer $t")
+                    reqBuilder.header("Cookie", "token=$t; mb_token=\"$t\"")
+                }
+
+                val resp = ApiClient.okHttpClient.newCall(reqBuilder.build()).execute()
+                if (resp.code == 400 || resp.code == 401) {
+                    return null
+                }
+                val str = resp.body?.string() ?: return null
+                return JSONObject(str)
+            }
+
+            var json = doSearch(token)
+            if (json == null) {
+                token = getSessionToken(forceRefresh = true)
+                json = doSearch(token)
+            }
+
+            val data = json?.optJSONObject("data")
+            val itemsArr = data?.optJSONArray("items") ?: data?.optJSONArray("subjectList")
+            val result = mutableListOf<MediaItem>()
+
+            if (itemsArr != null) {
+                for (i in 0 until itemsArr.length()) {
+                    val item = itemsArr.getJSONObject(i)
+                    val title = item.optString("title")
+                    val detailPath = item.optString("detailPath")
+                    val subType = item.optInt("subjectType", 1)
+                    val coverUrl = item.optJSONObject("cover")?.optString("url") ?: ""
+                    val releaseDate = item.optString("releaseDate")
+                    val year = if (releaseDate.length >= 4) releaseDate.take(4) else ""
+                    val rating = item.optString("imdbRatingValue").ifBlank { "7.5" }
+                    val genreList = item.optString("genre").split(",").map { it.trim() }.filter { it.isNotBlank() }
+                    val desc = item.optString("description")
+
+                    if (title.isNotBlank() && detailPath.isNotBlank() && !result.any { it.slug == detailPath }) {
+                        result.add(
+                            MediaItem(
+                                id = detailPath,
+                                title = title,
+                                category = CategoryType.MOVIES,
+                                thumbnail = coverUrl,
+                                url = "$BASE_URL/detail/$detailPath",
+                                slug = detailPath,
+                                badge = if (subType == 2) "Series" else "Movie",
+                                rating = rating,
+                                year = year,
+                                genres = genreList,
+                                synopsis = desc
+                            )
+                        )
+                    }
+                }
+            }
+            result
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
         }
     }
 
+    /**
+     * 3. Get Movie / Series Detail
+     */
     suspend fun getDetail(urlOrPath: String): MediaDetail? = withContext(Dispatchers.IO) {
         try {
-            val slug = urlOrPath.removePrefix(BASE_URL)
+            val cleanPath = urlOrPath.removePrefix(BASE_URL)
                 .removePrefix("https://themoviebox.xyz")
                 .removePrefix("/id/detail/")
                 .removePrefix("/detail/")
                 .removePrefix("/id/")
+                .split("?")
+                .first()
                 .trim('/')
 
-            // 1. Check cached subjects from home
-            if (cachedHomeSubjects.isNullOrEmpty()) {
-                getLatest(1)
-            }
-            val cached = cachedHomeSubjects?.find { it.slug == slug || it.id.contains(slug) }
+            val req = Request.Builder()
+                .url("$API_BASE/detail?detailPath=${URLEncoder.encode(cleanPath, "UTF-8")}")
+                .header("User-Agent", USER_AGENT)
+                .header("Accept", "application/json")
+                .header("X-Request-Lang", "id")
+                .header("Origin", "https://themoviebox.xyz")
+                .header("Referer", "https://themoviebox.xyz/id")
+                .build()
 
-            // 2. Fetch API detail data first
-            val apiJson = fetchJson("$API_BASE/detail?detailPath=$slug")
-            val sub = apiJson?.optJSONObject("data")?.optJSONObject("subject")
+            val resp = ApiClient.okHttpClient.newCall(req).execute()
+            if (!resp.isSuccessful) return@withContext null
+            val str = resp.body?.string() ?: return@withContext null
+            val json = JSONObject(str)
+            val data = json.optJSONObject("data") ?: return@withContext null
+            val subject = data.optJSONObject("subject") ?: return@withContext null
+            val resource = data.optJSONObject("resource")
 
-            var title = sub?.optString("title")?.ifBlank { null } ?: cached?.title ?: ""
-            var synopsis = sub?.optString("description")?.ifBlank { null } ?: cached?.synopsis ?: ""
-            var coverUrl = sub?.optJSONObject("cover")?.optString("url")?.ifBlank { null } ?: cached?.thumbnail ?: ""
-            var rating = sub?.optString("imdbRatingValue")?.ifBlank { null } ?: cached?.rating ?: "7.9"
-            var year = sub?.optString("releaseDate")?.take(4)?.ifBlank { null } ?: cached?.year ?: "2024"
-            var genres = sub?.optString("genre")?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: cached?.genres ?: listOf("Movie", "HD")
-            var videoStreamUrl = sub?.optJSONObject("trailer")?.optJSONObject("videoAddress")?.optString("url") ?: ""
+            val title = subject.optString("title")
+            val desc = subject.optString("description")
+            val releaseDate = subject.optString("releaseDate")
+            val year = if (releaseDate.length >= 4) releaseDate.take(4) else ""
+            val subType = subject.optInt("subjectType", 1) // 1=Movie, 2=Series
+            val isMovie = subType == 1
+            val subjectId = subject.optString("subjectId")
+            val coverUrl = subject.optJSONObject("cover")?.optString("url") ?: ""
+            val stillsUrl = subject.optJSONObject("stills")?.optString("url") ?: coverUrl
+            val rating = subject.optString("imdbRatingValue").ifBlank { "7.8" }
+            val genres = subject.optString("genre").split(",").map { it.trim() }.filter { it.isNotBlank() }
 
-            // 3. Fetch full HTML SSR page for detail & video stream
-            val detailUrl = "$BASE_URL/detail/$slug"
-            val html = fetchHtml(detailUrl)
+            val seasonsArr = resource?.optJSONArray("seasons")
+            val episodes = mutableListOf<EpisodeItem>()
 
-            if (!html.isNullOrBlank()) {
-                val doc = Jsoup.parse(html)
-
-                if (title.isBlank()) {
-                    title = doc.selectFirst("h1")?.text()?.trim()
-                        ?: doc.selectFirst("meta[property='og:title']")?.attr("content")?.replace(" - Moviebox", "")?.trim()
-                        ?: "Film Layar Lebar"
-                }
-
-                if (synopsis.isBlank()) {
-                    synopsis = doc.selectFirst("meta[property='og:description']")?.attr("content")
-                        ?: doc.selectFirst("meta[name='description']")?.attr("content")
-                        ?: ""
-                }
-
-                if (coverUrl.isBlank()) {
-                    coverUrl = doc.selectFirst("meta[property='og:image']")?.attr("content")
-                        ?: doc.selectFirst("img")?.attr("src")
-                        ?: ""
-                }
-
-                // Extract direct Video stream from VideoObject json-ld
-                if (videoStreamUrl.isBlank()) {
-                    doc.select("script[type='application/ld+json']").forEach { script ->
-                        val data = script.data()
-                        if (data.contains("VideoObject")) {
-                            try {
-                                val j = JSONObject(data)
-                                if (j.optString("@type") == "VideoObject") {
-                                    val cUrl = j.optString("contentUrl")
-                                    if (cUrl.isNotBlank() && cUrl.startsWith("http")) {
-                                        videoStreamUrl = cUrl
-                                    }
-                                    val desc = j.optString("description")
-                                    if (desc.isNotBlank() && synopsis.isBlank()) {
-                                        synopsis = desc
-                                    }
-                                }
-                            } catch (e: Exception) {}
-                        }
-                    }
-                }
-
-                // Regex search for macdn mp4 trailer/stream in HTML or __NUXT_DATA__
-                if (videoStreamUrl.isBlank()) {
-                    val m = Regex("""(https://macdn\.aoneroom\.com/[^\s\"\'<>]+\.mp4)""").find(html)
-                    if (m != null) {
-                        videoStreamUrl = m.value
-                    }
-                }
-
-                // Generic video regex search (.mp4 or .m3u8)
-                if (videoStreamUrl.isBlank()) {
-                    val mGen = Regex("""(https?:[\\/]+[^\s\"\'<>]+\.(?:mp4|m3u8)[^\s\"\'<>]*)""").find(html)
-                    if (mGen != null) {
-                        videoStreamUrl = mGen.value
-                    }
-                }
-            }
-
-            // Fallback to videoPlayPage if still blank
-            if (videoStreamUrl.isBlank()) {
-                val subId = sub?.optString("subjectId") ?: ""
-                val playPageUrl = "$BASE_URL/spa/videoPlayPage/movies/$slug?id=$subId&type=%2Fmovie%2Fdetail&detailSe=0&detailEp=1&lang=id"
-                val playHtml = fetchHtml(playPageUrl)
-                if (!playHtml.isNullOrBlank()) {
-                    val mPlay = Regex("""(https://macdn\.aoneroom\.com/[^\s\"\'<>]+\.mp4)""").find(playHtml)
-                    if (mPlay != null) {
-                        videoStreamUrl = mPlay.value
-                    }
-                }
-            }
-
-            if (title.isBlank()) {
-                title = slug.replace("-", " ").capitalize()
-            }
-
-            val episodes = listOf(
-                EpisodeItem(
-                    id = if (videoStreamUrl.isNotBlank()) videoStreamUrl else "$BASE_URL/detail/$slug",
-                    episodeNumber = "1",
-                    title = "Full Movie",
-                    url = if (videoStreamUrl.isNotBlank()) videoStreamUrl else "$BASE_URL/detail/$slug"
+            if (isMovie || seasonsArr == null || seasonsArr.length() == 0) {
+                // Movies: 1 episode
+                episodes.add(
+                    EpisodeItem(
+                        id = "$cleanPath?se=0&ep=0&subId=$subjectId",
+                        episodeNumber = "1",
+                        title = "Full Movie",
+                        url = "$cleanPath?se=0&ep=0&subId=$subjectId"
+                    )
                 )
-            )
+            } else {
+                // Series: loop seasons & episodes
+                var count = 0
+                for (sIdx in 0 until seasonsArr.length()) {
+                    val sObj = seasonsArr.getJSONObject(sIdx)
+                    val seNum = sObj.optInt("se", 1)
+                    val allEpStr = sObj.optString("allEp")
+                    val maxEp = sObj.optInt("maxEp", 0)
+
+                    val epList = when {
+                        allEpStr.isNotBlank() -> allEpStr.split(",").mapNotNull { it.trim().toIntOrNull() }
+                        maxEp > 0 -> (1..maxEp).toList()
+                        else -> listOf(1)
+                    }
+
+                    for (epNum in epList) {
+                        count++
+                        episodes.add(
+                            EpisodeItem(
+                                id = "$cleanPath?se=$seNum&ep=$epNum&subId=$subjectId",
+                                episodeNumber = count.toString(),
+                                title = "S${seNum} Episode $epNum",
+                                url = "$cleanPath?se=$seNum&ep=$epNum&subId=$subjectId"
+                            )
+                        )
+                    }
+                }
+            }
 
             MediaDetail(
-                id = "$BASE_URL/detail/$slug",
+                id = cleanPath,
                 title = title,
                 category = CategoryType.MOVIES,
                 thumbnail = coverUrl,
-                backdrop = coverUrl,
-                synopsis = synopsis.ifBlank { "Tonton film layar lebar $title dalam kualitas HD Subtitle Indonesia." },
+                backdrop = stillsUrl.ifBlank { coverUrl },
+                synopsis = desc.ifBlank { "Tonton $title dalam kualitas HD Subtitle Indonesia." },
                 genres = genres,
-                status = "Released $year",
+                status = if (isMovie) "Film Layar Lebar ($year)" else "Serial TV ($year)",
                 rating = rating,
                 releaseDate = year,
-                totalEpisodes = "Full Movie",
+                totalEpisodes = if (isMovie) "Full Movie" else "${episodes.size} Episode",
                 episodes = episodes
             )
         } catch (e: Exception) {
@@ -259,50 +335,158 @@ object MovieBoxScraper {
         }
     }
 
+    /**
+     * 4. Get Direct Playable Stream (MP4) from TheMovieBox API
+     */
     suspend fun getStream(urlOrPath: String, episode: Int = 1): StreamResult? = withContext(Dispatchers.IO) {
         try {
-            // 1. If urlOrPath is already a direct playable video stream
+            // 1. Direct playable stream URL bypass
             if (urlOrPath.contains(".mp4", ignoreCase = true) ||
                 urlOrPath.contains(".m3u8", ignoreCase = true) ||
-                urlOrPath.contains("macdn.aoneroom.com", ignoreCase = true)
+                urlOrPath.contains("hakunaymatata.com", ignoreCase = true) ||
+                urlOrPath.contains("aoneroom.com", ignoreCase = true)
             ) {
                 return@withContext StreamResult(
-                    title = "Full Movie HD",
+                    title = "TheMovieBox HD",
                     directHlsUrl = urlOrPath,
-                    iframePlayerUrl = null,
                     servers = listOf(
-                        StreamServerItem(
-                            name = "Movie HD Direct MP4",
-                            url = urlOrPath,
-                            isDirectHls = urlOrPath.contains(".m3u8")
-                        )
+                        StreamServerItem(name = "TheMovieBox Direct Stream", url = urlOrPath, isDirectHls = urlOrPath.contains(".m3u8"))
                     )
                 )
             }
 
-            // 2. Otherwise resolve via slug & detail
-            val slug = urlOrPath.removePrefix(BASE_URL)
+            // 2. Parse query parameters or slug
+            var cleanPath = urlOrPath.removePrefix(BASE_URL)
                 .removePrefix("https://themoviebox.xyz")
                 .removePrefix("/id/detail/")
                 .removePrefix("/detail/")
                 .removePrefix("/id/")
                 .trim('/')
 
-            val detail = getDetail(slug)
-            val streamUrl = detail?.episodes?.firstOrNull()?.url
+            var seParam: Int? = null
+            var epParam: Int? = null
+            var subIdParam: String? = null
 
-            if (!streamUrl.isNullOrBlank() && (streamUrl.contains(".mp4") || streamUrl.contains(".m3u8") || streamUrl.contains("macdn.aoneroom.com"))) {
+            if (cleanPath.contains("?")) {
+                val parts = cleanPath.split("?")
+                cleanPath = parts[0]
+                val queryParams = parts[1].split("&").associate {
+                    val kv = it.split("=")
+                    if (kv.size == 2) kv[0] to kv[1] else kv[0] to ""
+                }
+                seParam = queryParams["se"]?.toIntOrNull()
+                epParam = queryParams["ep"]?.toIntOrNull()
+                subIdParam = queryParams["subId"]
+            }
+
+            // Fetch detail to get subjectId, subjectType, trailer
+            val detail = getDetail(cleanPath) ?: return@withContext null
+            val subId = if (!subIdParam.isNullOrBlank()) subIdParam else {
+                // Try extracting subId from first episode url
+                val firstUrl = detail.episodes.firstOrNull()?.url ?: ""
+                Regex("""subId=([0-9]+)""").find(firstUrl)?.groupValues?.get(1) ?: detail.id
+            }
+            val isMovie = detail.status.contains("Film Layar Lebar") || detail.totalEpisodes == "Full Movie"
+
+            var se = seParam ?: if (isMovie) 0 else 1
+            var ep = epParam ?: if (isMovie) 0 else 1
+
+            var token = getSessionToken()
+
+            suspend fun fetchPlay(sId: String, s: Int, e: Int): JSONObject? {
+                val playUrl = "$API_BASE/subject/play?subjectId=${URLEncoder.encode(sId, "UTF-8")}&se=$s&ep=$e&detailPath=${URLEncoder.encode(cleanPath, "UTF-8")}&streamSignType=1"
+                val reqBuilder = Request.Builder()
+                    .url(playUrl)
+                    .header("User-Agent", USER_AGENT)
+                    .header("Accept", "application/json")
+                    .header("X-Request-Lang", "id")
+                    .header("Origin", "https://themoviebox.xyz")
+                    .header("Referer", "https://themoviebox.xyz/id/spa/videoPlayPage/movies/$cleanPath")
+
+                if (token.isNotBlank()) {
+                    reqBuilder.header("Authorization", "Bearer $token")
+                    reqBuilder.header("Cookie", "token=$token; mb_token=\"$token\"")
+                }
+
+                val resp = ApiClient.okHttpClient.newCall(reqBuilder.build()).execute()
+                val str = resp.body?.string() ?: return null
+                return JSONObject(str)
+            }
+
+            var playJson = fetchPlay(subId, se, ep)
+            var rawStreams = playJson?.optJSONObject("data")?.optJSONArray("streams")
+
+            // Fallback 1: If 0 streams and was not se=0, ep=0 -> try 0, 0
+            if ((rawStreams == null || rawStreams.length() == 0) && (se != 0 || ep != 0)) {
+                val fb0 = fetchPlay(subId, 0, 0)
+                val fb0Streams = fb0?.optJSONObject("data")?.optJSONArray("streams")
+                if (fb0Streams != null && fb0Streams.length() > 0) {
+                    playJson = fb0
+                    rawStreams = fb0Streams
+                }
+            }
+
+            // Fallback 2: If 0 streams and was se=0, ep=0 -> try 1, 1
+            if ((rawStreams == null || rawStreams.length() == 0) && se == 0 && ep == 0) {
+                val fb1 = fetchPlay(subId, 1, 1)
+                val fb1Streams = fb1?.optJSONObject("data")?.optJSONArray("streams")
+                if (fb1Streams != null && fb1Streams.length() > 0) {
+                    playJson = fb1
+                    rawStreams = fb1Streams
+                }
+            }
+
+            val servers = mutableListOf<StreamServerItem>()
+            val downloads = mutableListOf<DownloadItem>()
+
+            if (rawStreams != null && rawStreams.length() > 0) {
+                for (i in 0 until rawStreams.length()) {
+                    val s = rawStreams.getJSONObject(i)
+                    val sUrl = s.optString("url")
+                    val res = s.optString("resolutions")
+                    val label = if (res.isNotBlank()) "${res}p" else "HD"
+                    if (sUrl.isNotBlank()) {
+                        servers.add(
+                            StreamServerItem(
+                                name = "TheMovieBox $label (MP4)",
+                                url = sUrl,
+                                isDirectHls = sUrl.contains(".m3u8")
+                            )
+                        )
+                        downloads.add(
+                            DownloadItem(
+                                name = "Unduh MP4 $label",
+                                url = sUrl
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Fallback: HLS streams if available
+            val rawHls = playJson?.optJSONObject("data")?.optJSONArray("hls")
+            if (rawHls != null && rawHls.length() > 0) {
+                for (i in 0 until rawHls.length()) {
+                    val h = rawHls.getJSONObject(i)
+                    val hUrl = h.optString("url")
+                    if (hUrl.isNotBlank()) {
+                        servers.add(
+                            StreamServerItem(
+                                name = "TheMovieBox HLS Stream",
+                                url = hUrl,
+                                isDirectHls = true
+                            )
+                        )
+                    }
+                }
+            }
+
+            if (servers.isNotEmpty()) {
                 StreamResult(
                     title = "${detail.title} - Full Movie",
-                    directHlsUrl = streamUrl,
-                    iframePlayerUrl = null,
-                    servers = listOf(
-                        StreamServerItem(
-                            name = "MovieBox Direct MP4",
-                            url = streamUrl,
-                            isDirectHls = streamUrl.contains(".m3u8")
-                        )
-                    )
+                    directHlsUrl = servers.first().url,
+                    servers = servers,
+                    downloads = downloads
                 )
             } else {
                 null

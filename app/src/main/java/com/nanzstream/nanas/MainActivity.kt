@@ -166,9 +166,31 @@ class MainActivity : ComponentActivity() {
                                 repository = repository,
                                 onBackToPortal = { navController.popBackStack() },
                                 onItemClick = { item ->
-                                    navController.navigate(
-                                        Screen.Detail.createRoute("youtube", item.id)
-                                    )
+                                    val isChannel = item.badge.equals("Channel", ignoreCase = true) ||
+                                            item.genres.contains("Channel") ||
+                                            (item.url?.contains("/channel/") == true)
+                                    if (isChannel) {
+                                        navController.navigate(
+                                            Screen.Detail.createRoute("youtube", item.id)
+                                        )
+                                    } else {
+                                        val isShorts = item.badge.equals("Shorts", ignoreCase = true) ||
+                                                item.genres.contains("Shorts") ||
+                                                (item.url?.contains("/shorts/") == true)
+                                        val targetUrl = item.url ?: if (isShorts) {
+                                            "https://www.youtube.com/shorts/${item.id}"
+                                        } else {
+                                            "https://www.youtube.com/watch?v=${item.id}"
+                                        }
+                                        navController.navigate(
+                                            Screen.Player.createRoute(
+                                                category = "youtube",
+                                                title = item.title,
+                                                targetUrl = targetUrl,
+                                                episode = 1
+                                            )
+                                        )
+                                    }
                                 }
                             )
                         }

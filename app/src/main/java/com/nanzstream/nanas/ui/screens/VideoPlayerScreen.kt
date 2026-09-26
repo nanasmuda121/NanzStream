@@ -129,6 +129,22 @@ fun VideoPlayerScreen(
         return
     }
 
+    val isYouTubeShorts = category == CategoryType.YOUTUBE && (
+        targetUrl.contains("/shorts/", ignoreCase = true) ||
+        title.contains("#shorts", ignoreCase = true)
+    )
+
+    if (isYouTubeShorts) {
+        VerticalShortsPlayerScreen(
+            title = title,
+            initialUrl = targetUrl,
+            repository = repository,
+            onBackClick = onBackClick,
+            modifier = modifier
+        )
+        return
+    }
+
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() as? ComponentActivity }
     val lifecycleOwner = LocalLifecycleOwner.current
