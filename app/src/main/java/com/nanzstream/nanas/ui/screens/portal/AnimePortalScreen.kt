@@ -60,9 +60,9 @@ fun AnimePortalScreen(
     val todayIndex = remember { getTodayScheduleIndex() }
     var selectedDayIndex by remember { mutableIntStateOf(todayIndex) }
     var scheduleCache by remember { mutableStateOf<Map<Int, List<MediaItem>>>(emptyMap()) }
-    var scheduleList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
-    var latestList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
-    var popularList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var scheduleList by remember { mutableStateOf(repository.getFallbackAnimeSchedule(todayIndex)) }
+    var latestList by remember { mutableStateOf(repository.getFallbackAnime()) }
+    var popularList by remember { mutableStateOf(repository.getFallbackAnime()) }
     var searchResults by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var searchSuggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }

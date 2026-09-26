@@ -31,23 +31,37 @@ object ApiClient {
         private val cache = ConcurrentHashMap<String, List<InetAddress>>()
 
         private val staticFallbacks = mapOf(
-            "samehadaku.li" to listOf("104.21.83.37", "172.67.211.38"),
-            "www.samehadaku.li" to listOf("104.21.83.37", "172.67.211.38"),
-            "otakudesu.blog" to listOf("172.67.220.233", "104.21.94.77"),
-            "www.otakudesu.blog" to listOf("172.67.220.233", "104.21.94.77"),
+            "samehadaku.li" to listOf("104.21.76.66", "172.67.190.239", "104.21.83.37", "172.67.211.38"),
+            "www.samehadaku.li" to listOf("104.21.76.66", "172.67.190.239", "104.21.83.37", "172.67.211.38"),
+            "otakudesu.blog" to listOf("104.21.76.66", "172.67.190.239", "172.67.220.233", "104.21.94.77"),
+            "www.otakudesu.blog" to listOf("104.21.76.66", "172.67.190.239", "172.67.220.233", "104.21.94.77"),
             "anichin.ro" to listOf("104.21.76.66", "172.67.190.239"),
             "www.anichin.ro" to listOf("104.21.76.66", "172.67.190.239"),
-            "anichin.site" to listOf("104.21.13.75", "172.67.198.201"),
-            "www.webtoons.com" to listOf("203.104.174.129", "210.89.168.51"),
-            "webtoons.com" to listOf("210.89.168.51", "110.93.151.163", "203.104.174.129"),
-            "webtoon-phinf.pstatic.net" to listOf("23.215.35.157", "23.215.35.166", "23.44.150.113", "23.44.150.100"),
-            "dracinema.com" to listOf("172.67.194.112", "104.21.33.253"),
+            "anichin.site" to listOf("104.21.76.66", "172.67.190.239", "104.21.13.75", "172.67.198.201"),
+            "dracinema.com" to listOf("104.21.76.66", "172.67.190.239", "172.67.194.112", "104.21.33.253"),
             "themoviebox.online" to listOf("103.224.182.189"),
             "i0.wp.com" to listOf("192.0.77.2"),
             "i1.wp.com" to listOf("192.0.77.2"),
             "i2.wp.com" to listOf("192.0.77.2"),
             "i3.wp.com" to listOf("192.0.77.2")
         )
+
+        private fun createAddress(hostname: String, ip: String): InetAddress? {
+            return try {
+                val parts = ip.split('.').map { it.toInt().toByte() }.toByteArray()
+                if (parts.size == 4) {
+                    InetAddress.getByAddress(hostname, parts)
+                } else {
+                    InetAddress.getByName(ip)
+                }
+            } catch (e: Exception) {
+                try {
+                    InetAddress.getByName(ip)
+                } catch (e2: Exception) {
+                    null
+                }
+            }
+        }
 
         private fun isBlockedIp(ip: String): Boolean {
             return ip.startsWith("118.98.") ||
@@ -82,22 +96,25 @@ object ApiClient {
 
             val cleanHost = hostname.lowercase().trim()
 
-            // 1. Direct Static Mapping for known media scrapers & CDNs (Instant 0ms, 100% bypass ISP DNS tampering)
-            staticFallbacks[cleanHost]?.let { ips ->
-                val staticAddrs = ips.mapNotNull {
-                    try {
-                        InetAddress.getByName(it)
-                    } catch (e: Exception) {
-                        null
+            // 1. For known Indonesian ISP blocked media scrapers (Samehadaku, Otakudesu, Anichin, Dracinema):
+            // Use verified unblocked Anycast IPs with host-bound SNI
+            val isKnownBlockedDomain = cleanHost.contains("samehadaku") ||
+                    cleanHost.contains("otakudesu") ||
+                    cleanHost.contains("anichin") ||
+                    cleanHost.contains("dracinema")
+
+            if (isKnownBlockedDomain) {
+                staticFallbacks[cleanHost]?.let { ips ->
+                    val staticAddrs = ips.mapNotNull { createAddress(cleanHost, it) }
+                    if (staticAddrs.isNotEmpty()) {
+                        cache[hostname] = staticAddrs
+                        return staticAddrs
                     }
-                }
-                if (staticAddrs.isNotEmpty()) {
-                    cache[hostname] = staticAddrs
-                    return staticAddrs
                 }
             }
 
             // 2. Try System DNS (filter out Indonesian telco block/landing page IPs)
+            // For legal/unblocked services (Webtoon, YouTube, CDNs), System DNS resolves to the closest local edge (Akamai Jakarta/Singapore)
             try {
                 val systemAddrs = Dns.SYSTEM.lookup(hostname)
                 val validAddrs = systemAddrs.filter { !isBlockedIp(it.hostAddress ?: "") }
@@ -111,7 +128,16 @@ object ApiClient {
                 // System DNS failed or poisoned
             }
 
-            // 3. Fallback to Google DoH (with bounded 1.5s timeout)
+            // 3. Check static fallbacks if not already checked
+            staticFallbacks[cleanHost]?.let { ips ->
+                val staticAddrs = ips.mapNotNull { createAddress(cleanHost, it) }
+                if (staticAddrs.isNotEmpty()) {
+                    cache[hostname] = staticAddrs
+                    return staticAddrs
+                }
+            }
+
+            // 4. Fallback to Cloudflare / Google DoH (with bounded 1.5s timeout)
             try {
                 val dohAddrs = resolveDoH(cleanHost)
                 if (dohAddrs.isNotEmpty()) {
@@ -127,7 +153,7 @@ object ApiClient {
         }
 
         private fun resolveDoH(hostname: String): List<InetAddress> {
-            val url = URL("https://dns.google/resolve?name=$hostname&type=A")
+            val url = URL("https://1.1.1.1/dns-query?name=$hostname&type=A")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 1500
                 readTimeout = 1500
@@ -145,11 +171,7 @@ object ApiClient {
                 if (ans.optInt("type") == 1) { // A record
                     val ip = ans.optString("data")
                     if (ip.isNotBlank() && !isBlockedIp(ip)) {
-                        try {
-                            results.add(InetAddress.getByName(ip))
-                        } catch (e: Exception) {
-                            // ignore parse error
-                        }
+                        createAddress(hostname, ip)?.let { results.add(it) }
                     }
                 }
             }
@@ -159,9 +181,9 @@ object ApiClient {
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .dns(resilientDns)
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
-        .writeTimeout(12, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(7, TimeUnit.SECONDS)
+        .writeTimeout(7, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .followRedirects(true)
         .followSslRedirects(true)

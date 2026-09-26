@@ -69,7 +69,9 @@ fun KomikPortalScreen(
     val todayIndex = remember { getTodayScheduleIndex() }
     var selectedDayIndex by remember { mutableIntStateOf(todayIndex) }
     var scheduleCache by remember { mutableStateOf<Map<Int, List<MediaItem>>>(emptyMap()) }
-    var komikList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var komikList by remember {
+        mutableStateOf(repository.getFallbackWebtoonSchedule(SCHEDULE_DAYS[todayIndex].webtoonSlug))
+    }
     var searchResults by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var searchSuggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }

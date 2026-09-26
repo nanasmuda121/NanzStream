@@ -46,7 +46,8 @@ fun MediaItemCard(
             val referer = when {
                 thumb.contains("anichin") -> "https://anichin.ro/"
                 thumb.contains("otakudesu") -> "https://otakudesu.blog/"
-                thumb.contains("webtoon") -> "https://www.webtoons.com/"
+                thumb.contains("webtoon") || thumb.contains("pstatic") -> "https://www.webtoons.com/"
+                thumb.contains("samehadaku") || thumb.contains("wp.com") -> "https://samehadaku.li/"
                 else -> "https://www.google.com/"
             }
             ImageRequest.Builder(context)

@@ -53,18 +53,26 @@ class MediaRepository {
     }
 
     suspend fun getAnimeLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
-        try {
-            val res = AnimeScraper.getLatest(page)
-            if (res.isNotEmpty()) return@withContext res
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
+            try {
+                val s = AnimeScraper.getLatest(page)
+                if (s.isNotEmpty()) s else null
+            } catch (e: Exception) {
+                null
+            }
         }
-        try {
-            val res = OtakudesuScraper.getLatest(page)
-            if (res.isNotEmpty()) return@withContext res
-        } catch (e: Exception) {
-            e.printStackTrace()
+        if (!res.isNullOrEmpty()) return@withContext res
+
+        val res2 = kotlinx.coroutines.withTimeoutOrNull(3000) {
+            try {
+                val s = OtakudesuScraper.getLatest(page)
+                if (s.isNotEmpty()) s else null
+            } catch (e: Exception) {
+                null
+            }
         }
+        if (!res2.isNullOrEmpty()) return@withContext res2
+
         getFallbackAnime()
     }
 
@@ -79,38 +87,54 @@ class MediaRepository {
     }
 
     suspend fun getMangaHome(): List<MediaItem> = withContext(Dispatchers.IO) {
-        try {
-            val res = WebtoonScraper.getHome()
-            if (res.isNotEmpty()) return@withContext res
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
+            try {
+                val s = WebtoonScraper.getHome()
+                if (s.isNotEmpty()) s else null
+            } catch (e: Exception) {
+                null
+            }
         }
+        if (!res.isNullOrEmpty()) return@withContext res
+
         getFallbackWebtoon()
     }
 
     suspend fun getWebtoonSchedule(daySlug: String): List<MediaItem> = withContext(Dispatchers.IO) {
-        try {
-            val res = WebtoonScraper.getSchedule(daySlug)
-            if (res.isNotEmpty()) return@withContext res
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
+            try {
+                val s = WebtoonScraper.getSchedule(daySlug)
+                if (s.isNotEmpty()) s else null
+            } catch (e: Exception) {
+                null
+            }
         }
+        if (!res.isNullOrEmpty()) return@withContext res
+
         getFallbackWebtoonSchedule(daySlug)
     }
 
     suspend fun getAnimeSchedule(dayIndex: Int): List<MediaItem> = withContext(Dispatchers.IO) {
-        try {
-            val res = AnimeScraper.getSchedule(dayIndex)
-            if (res.isNotEmpty()) return@withContext res
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
+            try {
+                val s = AnimeScraper.getSchedule(dayIndex)
+                if (s.isNotEmpty()) s else null
+            } catch (e: Exception) {
+                null
+            }
         }
-        try {
-            val res = OtakudesuScraper.getSchedule(dayIndex)
-            if (res.isNotEmpty()) return@withContext res
-        } catch (e: Exception) {
-            e.printStackTrace()
+        if (!res.isNullOrEmpty()) return@withContext res
+
+        val res2 = kotlinx.coroutines.withTimeoutOrNull(3000) {
+            try {
+                val s = OtakudesuScraper.getSchedule(dayIndex)
+                if (s.isNotEmpty()) s else null
+            } catch (e: Exception) {
+                null
+            }
         }
+        if (!res2.isNullOrEmpty()) return@withContext res2
+
         getFallbackAnimeSchedule(dayIndex)
     }
 
@@ -306,10 +330,16 @@ class MediaRepository {
                             val detail = AnimeScraper.getDetail(idOrSlug)
                             if (detail != null) return@withContext detail
                         }
-                        OtakudesuScraper.getDetail(idOrSlug)
+                        val otDetail = OtakudesuScraper.getDetail(idOrSlug)
+                        if (otDetail != null) return@withContext otDetail
+                        getFallbackAnimeDetail(idOrSlug)
                     }
                     CategoryType.DONGHUA -> DonghuaScraper.getDetail(idOrSlug)
-                    CategoryType.MANGA -> WebtoonScraper.getDetail(idOrSlug)
+                    CategoryType.MANGA -> {
+                        val detail = WebtoonScraper.getDetail(idOrSlug)
+                        if (detail != null) return@withContext detail
+                        getFallbackWebtoonDetail(idOrSlug)
+                    }
                     CategoryType.DRACHINA -> DracinemaScraper.getDetail(idOrSlug)
                     CategoryType.MOVIES -> MovieBoxScraper.getDetail(idOrSlug)
                     CategoryType.YOUTUBE -> YouTubeScraper.getDetail(idOrSlug)
@@ -318,7 +348,9 @@ class MediaRepository {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                null
+                if (category == CategoryType.ANIME) getFallbackAnimeDetail(idOrSlug)
+                else if (category == CategoryType.MANGA) getFallbackWebtoonDetail(idOrSlug)
+                else null
             }
         }
 
@@ -410,7 +442,7 @@ class MediaRepository {
     }
 
     // Fallbacks
-    private fun getFallbackSpotlight(): List<MediaItem> = listOf(
+    fun getFallbackSpotlight(): List<MediaItem> = listOf(
         MediaItem(
             id = "spotlight_anime",
             title = "Hell Mode: Gamer wa Hai Settei 2nd Season",
@@ -425,23 +457,24 @@ class MediaRepository {
         )
     )
 
-    private fun getFallbackAnime(): List<MediaItem> = listOf(
+    fun getFallbackAnime(): List<MediaItem> = listOf(
         MediaItem("anime_1", "Hell Mode: Gamer wa Hai Settei 2nd Season", CategoryType.ANIME, "https://i1.wp.com/samehadaku.li/wp-content/uploads/2026/07/1783087205-9381-156314.jpg", "https://samehadaku.li/anime/hell-mode-yarikomizuki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-2nd-season/", "https://samehadaku.li/anime/hell-mode-yarikomizuki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-2nd-season/", "Ep 13"),
         MediaItem("anime_2", "One Piece", CategoryType.ANIME, "https://i1.wp.com/samehadaku.li/wp-content/uploads/2020/05/1589710323-5330-14282.jpg", "https://samehadaku.li/anime/one-piece/", "https://samehadaku.li/anime/one-piece/", "Ep 1179"),
         MediaItem("anime_3", "Tensei shitara Slime Datta Ken 4th Season", CategoryType.ANIME, "https://i0.wp.com/samehadaku.li/wp-content/uploads/2026/07/1784307424-1071-156329.jpg", "https://samehadaku.li/anime/tensei-shitara-slime-datta-ken-4th-season/", "https://samehadaku.li/anime/tensei-shitara-slime-datta-ken-4th-season/", "Ongoing"),
         MediaItem("anime_4", "Bleach: Sennen Kessen-hen", CategoryType.ANIME, "https://i2.wp.com/samehadaku.li/wp-content/uploads/2026/07/1783087512-3454-154997.jpg", "https://samehadaku.li/anime/bleach-sennen-kessen-hen-soukoku-tan/", "https://samehadaku.li/anime/bleach-sennen-kessen-hen-soukoku-tan/", "Ongoing")
     )
 
-    private fun getFallbackDonghua(): List<MediaItem> = listOf(
+    fun getFallbackDonghua(): List<MediaItem> = listOf(
         MediaItem("donghua_1", "Lord of the Ancient God Grave", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2026/02/Lord-of-the-Ancient-God-Grave-Subtitle-Indonesia.webp", "https://anichin.ro/lord-of-the-ancient-god-grave-episode-485-subtitle-indonesia/", "lord-of-the-ancient-god-grave", "Ep 485"),
         MediaItem("donghua_2", "Battle Through the Heavens Season 5", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2026/02/BTTH-Season-5-Subtitle-Indonesia.webp", "https://anichin.ro/battle-through-the-heavens-season-5-subtitle-indonesia/", "btth-season-5", "Ep 128")
     )
 
-    private fun getFallbackWebtoon(): List<MediaItem> = listOf(
+    fun getFallbackWebtoon(): List<MediaItem> = listOf(
+        MediaItem("5001", "Serena", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20260804_80/1785821073225nPwjs_JPEG/4Thumb_Poster.jpg?type=q90", "https://www.webtoons.com/id/romantic-fantasy/serena/list?title_no=5001", "5001", "Webtoon"),
         MediaItem("4834", "The Greatest Estate Developer", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20250205_17/1738719483097MIbul_JPEG/4834.jpg?type=q90", "https://www.webtoons.com/id/fantasy/the-greatest-estate-developer/list?title_no=4834", "4834", "Webtoon")
     )
 
-    private fun getFallbackAnimeSchedule(dayIndex: Int): List<MediaItem> {
+    fun getFallbackAnimeSchedule(dayIndex: Int): List<MediaItem> {
         val days = listOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
         val d = days.getOrElse(dayIndex) { "Senin" }
         return listOf(
@@ -452,7 +485,7 @@ class MediaRepository {
         )
     }
 
-    private fun getFallbackDonghuaSchedule(dayIndex: Int): List<MediaItem> {
+    fun getFallbackDonghuaSchedule(dayIndex: Int): List<MediaItem> {
         val days = listOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
         val d = days.getOrElse(dayIndex) { "Senin" }
         return listOf(
@@ -463,12 +496,48 @@ class MediaRepository {
         )
     }
 
-    private fun getFallbackWebtoonSchedule(daySlug: String): List<MediaItem> {
+    fun getFallbackWebtoonSchedule(daySlug: String): List<MediaItem> {
         return listOf(
             MediaItem("5001", "Serena", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20260804_80/1785821073225nPwjs_JPEG/4Thumb_Poster.jpg?type=q90", "https://www.webtoons.com/id/romantic-fantasy/serena/list?title_no=5001", "5001", "Webtoon"),
             MediaItem("11152", "The Corrupt Tyrant’s Obsession", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20260903_139/1788413418613Asfyr_JPEG/9Thumb_Poster.jpg?type=q90", "https://www.webtoons.com/id/romantic-fantasy/the-corrupt-tyrants-obession/list?title_no=11152", "11152", "Webtoon"),
             MediaItem("3085", "WEE!!!", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20250828_293/1756373680374gUKf3_JPEG/Thumb_Poster.jpg?type=q90", "https://www.webtoons.com/id/slice-of-life/wee/list?title_no=3085", "3085", "Webtoon"),
             MediaItem("4834", "The Greatest Estate Developer", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20250205_17/1738719483097MIbul_JPEG/4834.jpg?type=q90", "https://www.webtoons.com/id/fantasy/the-greatest-estate-developer/list?title_no=4834", "4834", "Webtoon")
+        )
+    }
+
+    private fun getFallbackAnimeDetail(idOrSlug: String): MediaDetail {
+        return MediaDetail(
+            id = idOrSlug,
+            title = "Hell Mode: Gamer wa Hai Settei 2nd Season",
+            category = CategoryType.ANIME,
+            thumbnail = "https://i1.wp.com/samehadaku.li/wp-content/uploads/2026/07/1783087205-9381-156314.jpg",
+            synopsis = "Petualangan gamer mode neraka di dunia lain dengan kasta terendah.",
+            genres = listOf("Action", "Fantasy", "Isekai"),
+            status = "Ongoing",
+            totalEpisodes = "13 Episode",
+            episodes = listOf(
+                EpisodeItem("1", "1", "Episode 1", "https://samehadaku.li/anime/hell-mode-yarikomizuki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-2nd-season/"),
+                EpisodeItem("2", "2", "Episode 2", "https://samehadaku.li/anime/hell-mode-yarikomizuki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-2nd-season/"),
+                EpisodeItem("13", "13", "Episode 13 (Terbaru)", "https://samehadaku.li/anime/hell-mode-yarikomizuki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-2nd-season/")
+            )
+        )
+    }
+
+    private fun getFallbackWebtoonDetail(idOrSlug: String): MediaDetail {
+        return MediaDetail(
+            id = idOrSlug,
+            title = "Serena",
+            category = CategoryType.MANGA,
+            thumbnail = "https://webtoon-phinf.pstatic.net/20260804_80/1785821073225nPwjs_JPEG/4Thumb_Poster.jpg?type=q90",
+            synopsis = "Serena, satu-satunya pewaris keluarga Serenity, terpaksa menikah demi menyelamatkan keluarganya.",
+            genres = listOf("Kerajaan", "Romance", "Drama"),
+            status = "Ongoing",
+            totalEpisodes = "100+ Episode",
+            chapters = listOf(
+                MangaChapterItem("ch_1", "1", "Episode 1", "https://www.webtoons.com/id/romantic-fantasy/serena/viewer?title_no=5001&episode_no=1"),
+                MangaChapterItem("ch_2", "2", "Episode 2", "https://www.webtoons.com/id/romantic-fantasy/serena/viewer?title_no=5001&episode_no=2"),
+                MangaChapterItem("ch_3", "3", "Episode 3", "https://www.webtoons.com/id/romantic-fantasy/serena/viewer?title_no=5001&episode_no=3")
+            )
         )
     }
 

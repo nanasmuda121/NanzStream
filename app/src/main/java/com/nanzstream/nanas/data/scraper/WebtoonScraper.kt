@@ -32,17 +32,7 @@ object WebtoonScraper {
                     .header("Accept-Language", "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7")
                     .build()
                 ApiClient.okHttpClient.newCall(req).execute().use { res ->
-                    if (res.isSuccessful) {
-                        res.body?.string()
-                    } else if (res.code in 300..399) {
-                        val loc = res.header("Location")
-                        if (!loc.isNullOrBlank()) {
-                            val nextUrl = if (loc.startsWith("http")) loc else "$BASE_URL$loc"
-                            fetchHtml(nextUrl, referer)
-                        } else null
-                    } else {
-                        null
-                    }
+                    if (res.isSuccessful) res.body?.string() else null
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -54,7 +44,7 @@ object WebtoonScraper {
 
     suspend fun getHome(): List<MediaItem> = withContext(Dispatchers.IO) {
         scheduleCache["home"]?.let { if (it.isNotEmpty()) return@withContext it }
-        val html = fetchHtml("$BASE_URL/id/originals") ?: fetchHtml("$BASE_URL/id/dailySchedule") ?: return@withContext emptyList()
+        val html = fetchHtml("$BASE_URL/id/originals") ?: return@withContext emptyList()
         val doc = Jsoup.parse(html)
         val items = mutableListOf<MediaItem>()
 
@@ -99,7 +89,7 @@ object WebtoonScraper {
         scheduleCache[cleanSlug]?.let { if (it.isNotEmpty()) return@withContext it }
 
         val targetUrl = "$BASE_URL/id/originals/$cleanSlug"
-        val html = fetchHtml(targetUrl) ?: return@withContext getHome()
+        val html = fetchHtml(targetUrl) ?: return@withContext emptyList()
         val doc = Jsoup.parse(html)
         val items = mutableListOf<MediaItem>()
 
@@ -133,11 +123,10 @@ object WebtoonScraper {
                 )
             }
         }
-        val result = if (items.isEmpty()) getHome() else items
-        if (result.isNotEmpty()) {
-            scheduleCache[cleanSlug] = result
+        if (items.isNotEmpty()) {
+            scheduleCache[cleanSlug] = items
         }
-        result
+        items
     }
 
     suspend fun search(query: String): List<MediaItem> = withContext(Dispatchers.IO) {
