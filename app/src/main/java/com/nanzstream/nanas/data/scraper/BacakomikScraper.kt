@@ -324,15 +324,17 @@ object BacakomikScraper {
             return ""
         }
 
-        // Try primary containers first
+        // Try primary containers first (including user API selectors)
         val containers = listOfNotNull(
+            doc.selectFirst("#chimg-auh"),
             doc.selectFirst("#anjay_ini_id_kh"),
+            doc.selectFirst(".chapter-content"),
+            doc.selectFirst(".chapter-area"),
             doc.selectFirst("#readerarea"),
             doc.selectFirst(".oi_ada_class_skrng"),
             doc.selectFirst(".entry-content"),
             doc.selectFirst(".main-reading-area"),
-            doc.selectFirst("#chapter-images"),
-            doc.selectFirst(".chapter-content")
+            doc.selectFirst("#chapter-images")
         )
 
         for (container in containers) {
