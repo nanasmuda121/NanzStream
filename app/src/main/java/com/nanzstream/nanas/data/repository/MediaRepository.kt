@@ -468,14 +468,16 @@ class MediaRepository {
     suspend fun getMangaPages(chapterId: String): List<MangaPageItem> = withContext(Dispatchers.IO) {
         val cleanId = chapterId.trim()
         val targetUrl = when {
-            cleanId.startsWith("http") -> cleanId
+            cleanId.startsWith("http://") || cleanId.startsWith("https://") -> cleanId
+            cleanId.startsWith("/") -> "https://bacakomik.my$cleanId"
             else -> "https://bacakomik.my/$cleanId"
         }
+        val finalUrl = if (targetUrl.endsWith("/")) targetUrl else "$targetUrl/"
 
         // 100% Bacakomik
-        val res = kotlinx.coroutines.withTimeoutOrNull(18000) {
+        val res = kotlinx.coroutines.withTimeoutOrNull(25000) {
             try {
-                val list = BacakomikScraper.getPages(targetUrl)
+                val list = BacakomikScraper.getPages(finalUrl)
                 if (list.isNotEmpty()) list else null
             } catch (e: Exception) {
                 null

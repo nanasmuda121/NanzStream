@@ -32,23 +32,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
-import coil.compose.SubcomposeAsyncImage
-import coil.request.ImageRequest
 import com.nanzstream.nanas.NanzStreamApp
 import com.nanzstream.nanas.crypto.MangaDecryptor
+import com.nanzstream.nanas.crypto.WebtoonBitmapDecoder
 import com.nanzstream.nanas.data.model.CategoryType
 import com.nanzstream.nanas.data.model.ContinueWatchingItem
 import com.nanzstream.nanas.data.model.MangaChapterItem
 import com.nanzstream.nanas.data.model.MangaPageItem
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.ui.theme.*
-import android.view.View
-import android.view.ViewGroup
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -71,7 +63,6 @@ fun MangaReaderScreen(
     var pages by remember { mutableStateOf<List<MangaPageItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var showControls by remember { mutableStateOf(true) }
-    var useWebReader by remember { mutableStateOf(false) }
 
     var isDownloaded by remember(currentChapterId) {
         mutableStateOf(NanzStreamApp.offlineManga.isChapterDownloaded(currentChapterId))
@@ -180,46 +171,7 @@ fun MangaReaderScreen(
             .background(Color.Black)
             .clickable { showControls = !showControls }
     ) {
-        if (useWebReader) {
-            AndroidView(
-                factory = { ctx ->
-                    WebView(ctx).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                        setBackgroundColor(android.graphics.Color.BLACK)
-                        settings.apply {
-                            javaScriptEnabled = true
-                            domStorageEnabled = true
-                            allowContentAccess = true
-                            useWideViewPort = true
-                            loadWithOverviewMode = true
-                            userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-                        }
-                        webViewClient = object : WebViewClient() {
-                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                val u = request?.url?.toString().orEmpty()
-                                if (u.contains("bacakomik") || u.contains(".lol") || u.contains(".lat") || u.contains(".pics") || u.contains("wp.com")) {
-                                    return false
-                                }
-                                return true
-                            }
-                        }
-                    }
-                },
-                update = { wv ->
-                    val target = if (currentChapterId.startsWith("http")) currentChapterId else "https://bacakomik.my/$currentChapterId"
-                    if (wv.url != target) {
-                        wv.loadUrl(target)
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = if (showControls) 56.dp else 0.dp)
-            )
-        } else if (isLoading) {
+        if (isLoading) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -250,40 +202,26 @@ fun MangaReaderScreen(
                         fontSize = 12.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color.White)
-                                .clickable {
-                                    coroutineScope.launch {
-                                        isLoading = true
-                                        try {
-                                            pages = repository.getMangaPages(currentChapterId)
-                                        } catch (e: Exception) {
-                                            e.printStackTrace()
-                                        } finally {
-                                            isLoading = false
-                                        }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.White)
+                            .clickable {
+                                coroutineScope.launch {
+                                    isLoading = true
+                                    try {
+                                        pages = repository.getMangaPages(currentChapterId)
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    } finally {
+                                        isLoading = false
                                     }
                                 }
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Muat Ulang", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(AccentCyan)
-                                .clickable { useWebReader = true }
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("🌐 Mode Web", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
+                            }
+                            .padding(horizontal = 24.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Muat Ulang", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -479,24 +417,6 @@ fun MangaReaderScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Reader Mode Switcher Toggle Button (⚡ Native vs 🌐 Web)
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(100.dp))
-                            .background(if (useWebReader) AccentCyan.copy(alpha = 0.85f) else Color(0x33FFFFFF))
-                            .border(1.dp, GlassBorder, RoundedCornerShape(100.dp))
-                            .clickable { useWebReader = !useWebReader }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (useWebReader) "🌐 Web" else "⚡ Native",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
                     // Offline Download Action Button
                     if (isDownloading) {
                         Row(
@@ -717,15 +637,33 @@ fun MangaReaderScreen(
 
 @Composable
 fun MangaPageView(page: MangaPageItem) {
-    var decryptedBitmap by remember(page.url) { mutableStateOf<Bitmap?>(null) }
-    var isDecrypting by remember(page.url) { mutableStateOf(!page.key.isNullOrBlank()) }
+    val context = LocalContext.current
+    var slices by remember(page.url) { mutableStateOf<List<Bitmap>>(emptyList()) }
+    var isLoading by remember(page.url) { mutableStateOf(true) }
+    var isError by remember(page.url) { mutableStateOf(false) }
     var reloadTrigger by remember(page.url) { mutableIntStateOf(0) }
 
     LaunchedEffect(page.url, reloadTrigger) {
-        if (!page.key.isNullOrBlank() && !page.iv.isNullOrBlank()) {
-            isDecrypting = true
-            decryptedBitmap = MangaDecryptor.loadAndDecryptBitmap(page.url, page.key, page.iv)
-            isDecrypting = false
+        isLoading = true
+        isError = false
+        try {
+            val result = WebtoonBitmapDecoder.loadPageSlices(
+                context = context,
+                pageUrl = page.url,
+                keyHex = page.key,
+                ivHex = page.iv
+            )
+            if (result.isNotEmpty()) {
+                slices = result
+                isError = false
+            } else {
+                isError = true
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            isError = true
+        } finally {
+            isLoading = false
         }
     }
 
@@ -735,106 +673,70 @@ fun MangaPageView(page: MangaPageItem) {
             .wrapContentHeight(),
         contentAlignment = Alignment.Center
     ) {
-        if (decryptedBitmap != null) {
-            Image(
-                bitmap = decryptedBitmap!!.asImageBitmap(),
-                contentDescription = "Halaman ${page.page}",
-                contentScale = ContentScale.FillWidth,
+        if (slices.isNotEmpty()) {
+            Column(
                 modifier = Modifier.fillMaxWidth()
-            )
-        } else if (isDecrypting) {
+            ) {
+                slices.forEach { sliceBitmap ->
+                    Image(
+                        bitmap = sliceBitmap.asImageBitmap(),
+                        contentDescription = "Halaman ${page.page}",
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        } else if (isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(300.dp),
+                    .height(280.dp)
+                    .background(Color(0xFF141414)),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
-            }
-        } else {
-            val isLocalFile = page.url.startsWith("file://")
-            val context = LocalContext.current
-            val imageModel = remember(page.url, reloadTrigger) {
-                if (isLocalFile) {
-                    File(page.url.removePrefix("file://"))
-                } else {
-                    val referer = if (page.url.contains("animasu")) {
-                        "https://animasu.love/"
-                    } else {
-                        "https://bacakomik.my/"
-                    }
-                    ImageRequest.Builder(context)
-                        .data(page.url)
-                        .addHeader("Referer", referer)
-                        .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                        .crossfade(true)
-                        .bitmapConfig(Bitmap.Config.RGB_565)
-                        .allowHardware(false)
-                        .build()
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = "Memuat Halaman ${page.page}...",
+                        color = TextMuted,
+                        fontSize = 11.sp
+                    )
                 }
             }
-
-            SubcomposeAsyncImage(
-                model = imageModel,
-                contentDescription = "Halaman ${page.page}",
-                contentScale = ContentScale.FillWidth,
+        } else if (isError) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .wrapContentHeight(),
-                loading = {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(280.dp)
-                            .background(Color(0xFF141414)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                color = Color.White,
-                                strokeWidth = 2.dp,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Text(
-                                text = "Memuat Halaman ${page.page}...",
-                                color = TextMuted,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-                },
-                error = {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp)
-                            .background(Color(0xFF1A1A1A))
-                            .clickable { reloadTrigger++ }
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = "Halaman ${page.page} gagal dimuat",
-                                color = TextMuted,
-                                fontSize = 12.sp
-                            )
-                            Text(
-                                text = "Ketuk untuk memuat ulang",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                    .height(180.dp)
+                    .background(Color(0xFF1A1A1A))
+                    .clickable { reloadTrigger++ }
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Halaman ${page.page} gagal dimuat",
+                        color = TextMuted,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "Ketuk untuk memuat ulang",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-            )
+            }
         }
     }
 }
