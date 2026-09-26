@@ -89,6 +89,58 @@ object BacakomikScraper {
     suspend fun getHome(): List<MediaItem> = getLatest(1)
 
     /**
+     * Get comics by type (manga, manhwa, manhua) from https://bacakomik.my/daftar-komik/?type=$type
+     */
+    suspend fun getByType(type: String, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
+        val cleanType = type.lowercase().trim()
+        val url = if (page <= 1) {
+            "$BASE_URL/daftar-komik/?type=$cleanType"
+        } else {
+            "$BASE_URL/daftar-komik/page/$page/?type=$cleanType"
+        }
+        val html = fetchHtml(url) ?: return@withContext emptyList()
+        val doc = Jsoup.parse(html)
+        val items = mutableListOf<MediaItem>()
+
+        doc.select(".animepost").forEach { post ->
+            val a = post.selectFirst("a[itemprop=url]") ?: post.selectFirst("a") ?: return@forEach
+            val href = a.attr("href").trim()
+            if (href.isBlank() || !href.contains("/komik/")) return@forEach
+
+            val title = post.selectFirst(".tt h4")?.text()?.trim()
+                ?: post.selectFirst(".tt")?.text()?.trim()
+                ?: a.attr("title").replace("Komik ", "").trim()
+            if (title.isBlank()) return@forEach
+
+            val imgEl = post.selectFirst("img")
+            val thumbnail = imgEl?.attr("data-lazy-src")
+                ?.ifEmpty { imgEl.attr("data-src") }
+                ?.ifEmpty { post.selectFirst("noscript img")?.attr("src") }
+                ?.ifEmpty { imgEl?.attr("src") }
+                ?: ""
+
+            val chText = post.selectFirst(".lsch a")?.text()?.trim() ?: type.replaceFirstChar { it.uppercase() }
+            val slug = href.trimEnd('/').substringAfterLast('/')
+
+            if (items.none { it.id == slug || it.url == href }) {
+                items.add(
+                    MediaItem(
+                        id = slug,
+                        title = title,
+                        category = CategoryType.MANGA,
+                        thumbnail = thumbnail,
+                        url = href,
+                        slug = slug,
+                        badge = chText,
+                        rating = type.replaceFirstChar { it.uppercase() }
+                    )
+                )
+            }
+        }
+        items
+    }
+
+    /**
      * Search comics on bacakomik.my
      */
     suspend fun search(query: String, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {

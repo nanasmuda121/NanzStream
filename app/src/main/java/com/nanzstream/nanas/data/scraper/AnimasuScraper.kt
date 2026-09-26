@@ -10,6 +10,7 @@ import com.nanzstream.nanas.data.model.StreamServerItem
 import com.nanzstream.nanas.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Request
 import org.jsoup.Jsoup
 import java.net.URLEncoder
@@ -321,7 +322,10 @@ object AnimasuScraper {
         val servers = mutableListOf<StreamServerItem>()
         var primaryHlsUrl: String? = null
 
-        // 1. Parse select.mirror base64 options (Vidhide, YourUpload, Mega, Blogger, Filedon, etc.)
+        // 1. Collect all raw mirror options fast without blocking
+        data class RawMirror(val label: String, val src: String)
+        val rawMirrors = mutableListOf<RawMirror>()
+
         doc.select("select.mirror option").forEach { opt ->
             val b64 = opt.attr("value").trim()
             val label = opt.text().trim()
@@ -329,88 +333,17 @@ object AnimasuScraper {
                 try {
                     val decodedHtml = String(Base64.decode(b64, Base64.DEFAULT), Charsets.UTF_8)
                     val iframeDoc = Jsoup.parse(decodedHtml)
-                    val iframeSrc = iframeDoc.selectFirst("iframe")?.attr("src")
+                    var iframeSrc = iframeDoc.selectFirst("iframe")?.attr("src")
                         ?: Regex("""src=["']([^"']+)["']""").find(decodedHtml)?.groupValues?.get(1)
 
                     if (!iframeSrc.isNullOrBlank() && iframeSrc.startsWith("http")) {
-                        // Check if it's Vidhide (Direct HLS!)
-                        if (iframeSrc.contains("vidhide") || iframeSrc.contains("odvidhide")) {
-                            val hls = StreamResolver.extractVidhideHls(iframeSrc, referer = "$BASE_URL/")
-                            if (!hls.isNullOrBlank()) {
-                                if (primaryHlsUrl == null || label.contains("720p", ignoreCase = true) || label.contains("1080p", ignoreCase = true)) {
-                                    primaryHlsUrl = hls
-                                }
-                                servers.add(
-                                    StreamServerItem(
-                                        name = "Vidhide Direct HLS ($label)",
-                                        url = hls,
-                                        isDirectHls = true
-                                    )
-                                )
-                            } else {
-                                servers.add(
-                                    StreamServerItem(
-                                        name = "Vidhide Player ($label)",
-                                        url = iframeSrc,
-                                        isDirectHls = false
-                                    )
-                                )
-                            }
-                        } else if (iframeSrc.contains("yourupload.com")) {
-                            val mp4 = StreamResolver.extractYourUploadDirect(iframeSrc, referer = "$BASE_URL/")
-                            if (!mp4.isNullOrBlank()) {
-                                servers.add(
-                                    StreamServerItem(
-                                        name = "YourUpload Direct MP4 ($label)",
-                                        url = mp4,
-                                        isDirectHls = true
-                                    )
-                                )
-                            } else {
-                                servers.add(
-                                    StreamServerItem(
-                                        name = "YourUpload Player ($label)",
-                                        url = iframeSrc,
-                                        isDirectHls = false
-                                    )
-                                )
-                            }
-                        } else if (iframeSrc.contains("ok.ru/videoembed/")) {
-                            val okDirect = StreamResolver.extractOkRuDirect(iframeSrc, referer = "$BASE_URL/")
-                            if (!okDirect.isNullOrBlank()) {
-                                servers.add(
-                                    StreamServerItem(
-                                        name = "OK.ru Direct ($label)",
-                                        url = okDirect,
-                                        isDirectHls = true
-                                    )
-                                )
-                            } else {
-                                servers.add(
-                                    StreamServerItem(
-                                        name = "OK.ru Player ($label)",
-                                        url = iframeSrc,
-                                        isDirectHls = false
-                                    )
-                                )
-                            }
-                        } else {
-                            val hostName = when {
-                                iframeSrc.contains("blogger.com") -> "Blogger"
-                                iframeSrc.contains("mega.nz") -> "Mega"
-                                iframeSrc.contains("filedon.co") -> "Filedon"
-                                iframeSrc.contains("terabox.com") -> "TeraBox"
-                                iframeSrc.contains("abyssplayer") -> "Abyss"
-                                else -> "Server"
-                            }
-                            servers.add(
-                                StreamServerItem(
-                                    name = "$hostName Player ($label)",
-                                    url = iframeSrc,
-                                    isDirectHls = false
-                                )
-                            )
-                        }
+                        // Apply Animasu website domain rewrites
+                        if (iframeSrc.contains("short.ink")) iframeSrc = iframeSrc.replace("short.ink", "player.abyssplayer.com")
+                        if (iframeSrc.contains("short.icu")) iframeSrc = iframeSrc.replace("short.icu", "player.abyssplayer.com")
+                        if (iframeSrc.contains("uservideo.in")) iframeSrc = iframeSrc.replace(".in", ".xyz")
+                        if (iframeSrc.contains("nanime.yt")) iframeSrc = iframeSrc.replace(".yt", ".in")
+
+                        rawMirrors.add(RawMirror(label, iframeSrc))
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -418,12 +351,66 @@ object AnimasuScraper {
             }
         }
 
-        // 2. Direct iframes in #pembed or .player-embed
+        // 2. Prioritize Vidhide for direct HLS extraction (prefer 720p or 1080p, else first Vidhide)
+        val vidhideMirrors = rawMirrors.filter { it.src.contains("vidhide") || it.src.contains("odvidhide") }
+        val preferredVidhide = vidhideMirrors.find { it.label.contains("720p", ignoreCase = true) }
+            ?: vidhideMirrors.find { it.label.contains("1080p", ignoreCase = true) }
+            ?: vidhideMirrors.firstOrNull()
+
+        if (preferredVidhide != null) {
+            val directHls = withTimeoutOrNull(3500) {
+                try {
+                    StreamResolver.extractVidhideHls(preferredVidhide.src, referer = "$BASE_URL/")
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            if (!directHls.isNullOrBlank()) {
+                primaryHlsUrl = directHls
+                servers.add(
+                    StreamServerItem(
+                        name = "Vidhide Direct HLS (${preferredVidhide.label})",
+                        url = directHls,
+                        isDirectHls = true
+                    )
+                )
+            }
+        }
+
+        // 3. Add all collected mirrors to servers list
+        rawMirrors.forEach { mirror ->
+            val isExtractedVidhide = primaryHlsUrl != null && mirror == preferredVidhide
+            if (!isExtractedVidhide) {
+                val hostName = when {
+                    mirror.src.contains("vidhide") || mirror.src.contains("odvidhide") -> "Vidhide"
+                    mirror.src.contains("yourupload.com") -> "YourUpload"
+                    mirror.src.contains("ok.ru") -> "OK.ru"
+                    mirror.src.contains("blogger.com") -> "Blogger"
+                    mirror.src.contains("mega.nz") -> "Mega"
+                    mirror.src.contains("filedon.co") -> "Filedon"
+                    mirror.src.contains("terabox.com") -> "TeraBox"
+                    mirror.src.contains("abyssplayer") || mirror.src.contains("short.ink") -> "Abyss"
+                    mirror.src.contains("berkasdrive.com") -> "BerkasDrive"
+                    else -> "Server"
+                }
+                servers.add(
+                    StreamServerItem(
+                        name = "$hostName (${mirror.label})",
+                        url = mirror.src,
+                        isDirectHls = false
+                    )
+                )
+            }
+        }
+
+        // 4. Also check direct iframes in #pembed or .player-embed
         doc.select("#pembed iframe, .player-embed iframe, .responsive-embed-stream iframe").forEach { iframe ->
-            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
+            var src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
+            if (src.contains("short.ink")) src = src.replace("short.ink", "player.abyssplayer.com")
+            if (src.contains("short.icu")) src = src.replace("short.icu", "player.abyssplayer.com")
             if (src.isNotBlank() && src.startsWith("http") && !src.contains("about:blank") && !src.contains("facebook.com") && !src.contains("cbox.ws")) {
                 if (!servers.any { it.url == src }) {
-                    servers.add(StreamServerItem(name = "Main Player", url = src, isDirectHls = false))
+                    servers.add(StreamServerItem(name = "Main Player (Web)", url = src, isDirectHls = false))
                 }
             }
         }

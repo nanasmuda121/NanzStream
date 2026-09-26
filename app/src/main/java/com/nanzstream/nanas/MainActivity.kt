@@ -103,7 +103,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        // 3. Sub-App Kategori: Komik Universe (Line Webtoon) dengan Navbar Khusus
+                        // 3. Sub-App Kategori: Komik Universe (Bacakomik) dengan Navbar Khusus
                         composable("universe_komik") {
                             KomikPortalScreen(
                                 repository = repository,
@@ -292,7 +292,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        // Manga / Webtoon Reader Screen
+                        // Manga / Komik Reader Screen
                         composable(
                             route = Screen.Reader.route,
                             arguments = listOf(

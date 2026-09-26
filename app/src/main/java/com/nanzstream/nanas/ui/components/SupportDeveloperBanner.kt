@@ -307,7 +307,7 @@ fun SupportDeveloperDialog(
                         .padding(14.dp)
                 ) {
                     Text(
-                        text = "Halo penikmat NanzStream!\n\nAplikasi ini dikembangkan untuk memberikan akses gratis streaming Anime, Animasi Donghua, Komik Line Webtoon, dan siaran Live TV tanpa gangguan.\n\nDukung kami dengan bergabung ke Saluran WhatsApp resmi untuk mendapatkan informasi update server, perbaikan channel, dan request judul favorit kamu!",
+                        text = "Halo penikmat NanzStream!\n\nAplikasi ini dikembangkan untuk memberikan akses gratis streaming Anime, Animasi Donghua, Komik Manga & Manhwa, dan siaran Live TV tanpa gangguan.\n\nDukung kami dengan bergabung ke Saluran WhatsApp resmi untuk mendapatkan informasi update server, perbaikan channel, dan request judul favorit kamu!",
                         color = TextMuted,
                         fontSize = 12.sp,
                         lineHeight = 17.sp

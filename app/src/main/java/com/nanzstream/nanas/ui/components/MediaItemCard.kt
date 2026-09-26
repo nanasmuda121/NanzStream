@@ -45,9 +45,8 @@ fun MediaItemCard(
             val thumb = item.thumbnail
             val referer = when {
                 thumb.contains("animasu") -> "https://animasu.love/"
-                thumb.contains("bacakomik") -> "https://bacakomik.my/"
+                thumb.contains("bacakomik") || thumb.contains(".lol") || thumb.contains(".lat") || thumb.contains(".pics") -> "https://bacakomik.my/"
                 thumb.contains("anichin") -> "https://anichin.ro/"
-                thumb.contains("webtoon") || thumb.contains("pstatic") -> "https://www.webtoons.com/"
                 thumb.contains("samehadaku") || thumb.contains("wp.com") -> "https://samehadaku.li/"
                 else -> "https://www.google.com/"
             }

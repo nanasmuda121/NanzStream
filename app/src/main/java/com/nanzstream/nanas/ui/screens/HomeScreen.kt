@@ -69,10 +69,10 @@ fun HomeScreen(
                 // Universe 2: Komik
                 UniverseCard(
                     title = "KOMIK",
-                    subtitle = "Line Webtoon ID, Manga & Manhwa Terjemahan Indonesia.",
+                    subtitle = "Koleksi Manga, Manhwa & Manhua Terjemahan Indonesia.",
                     actionText = "Buka Portal Komik",
                     badgeCount = "3.8k+ TITLES",
-                    badgeHighlight = "LINE WEBTOON",
+                    badgeHighlight = "BACAKOMIK",
                     icon = Icons.Default.MenuBook,
                     watermarkText = "📖",
                     onClick = { onNavigateToCategory("manga") }

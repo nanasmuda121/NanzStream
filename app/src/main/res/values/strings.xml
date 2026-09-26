@@ -4,7 +4,7 @@
     <string name="category_all">Semua</string>
     <string name="category_anime">Anime</string>
     <string name="category_donghua">Donghua</string>
-    <string name="category_manga">Webtoon</string>
+    <string name="category_manga">Komik</string>
     <string name="category_livetv">Live TV</string>
     <string name="category_vod">VOD Series</string>
 </resources>

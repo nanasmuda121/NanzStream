@@ -138,7 +138,7 @@ fun SearchScreen(
                     decorationBox = { innerTextField ->
                         if (query.isEmpty()) {
                             Text(
-                                text = "Cari anime, donghua, webtoon...",
+                                text = "Cari anime, donghua, komik...",
                                 color = TextMuted,
                                 fontSize = 13.sp
                             )

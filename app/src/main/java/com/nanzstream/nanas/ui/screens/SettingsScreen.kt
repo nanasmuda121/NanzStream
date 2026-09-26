@@ -197,7 +197,7 @@ fun SettingsScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Webtoon (Gulir)",
+                    text = "Gulir Vertikal",
                     color = if (readerMode == "webtoon") Color.Black else TextPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold

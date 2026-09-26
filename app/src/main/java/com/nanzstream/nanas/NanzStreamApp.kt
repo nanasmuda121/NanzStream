@@ -60,9 +60,7 @@ class NanzStreamApp : Application(), ImageLoaderFactory {
                         val urlStr = req.url.toString()
                         val builder = req.newBuilder()
                             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                        if (urlStr.contains("webtoon") || urlStr.contains("pstatic.net")) {
-                            builder.header("Referer", "https://www.webtoons.com/")
-                        } else if (urlStr.contains("animasu")) {
+                        if (urlStr.contains("animasu")) {
                             builder.header("Referer", "https://animasu.love/")
                         } else if (urlStr.contains("bacakomik") || urlStr.contains(".lol") || urlStr.contains(".lat") || urlStr.contains(".pics") || urlStr.contains("/media/") || urlStr.contains("/data/")) {
                             builder.header("Referer", "https://bacakomik.my/")

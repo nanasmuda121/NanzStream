@@ -94,9 +94,10 @@ class OfflineMangaManager(private val context: Context) {
 
                 // If already downloaded and valid, reuse
                 if (!pageFile.exists() || pageFile.length() == 0L) {
+                    val referer = if (page.url.contains("animasu")) "https://animasu.love/" else "https://bacakomik.my/"
                     val req = Request.Builder()
                         .url(page.url)
-                        .header("Referer", "https://www.webtoons.com/")
+                        .header("Referer", referer)
                         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
                         .build()
 
@@ -129,7 +130,7 @@ class OfflineMangaManager(private val context: Context) {
             if (savedPagePaths.isNotEmpty()) {
                 val offlineChapter = OfflineChapter(
                     mangaId = mangaId,
-                    mangaTitle = mangaTitle.ifBlank { "Komik Webtoon" },
+                    mangaTitle = mangaTitle.ifBlank { "Komik" },
                     chapterId = chapterId,
                     chapterTitle = chapterTitle.ifBlank { "Chapter" },
                     thumbnail = thumbnail,

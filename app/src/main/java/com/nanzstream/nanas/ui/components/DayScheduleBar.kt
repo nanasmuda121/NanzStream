@@ -27,7 +27,7 @@ data class DayScheduleInfo(
     val index: Int,
     val dayName: String,
     val shortName: String,
-    val webtoonSlug: String
+    val daySlug: String = ""
 )
 
 val SCHEDULE_DAYS = listOf(

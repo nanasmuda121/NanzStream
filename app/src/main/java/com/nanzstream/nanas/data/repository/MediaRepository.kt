@@ -22,10 +22,10 @@ class MediaRepository {
                 category = CategoryType.ALL,
                 thumbnail = landingImageUrl,
                 badge = "All-in-One Hub",
-                synopsis = "Streaming Anime Samehadaku, Animasi Donghua Anichin, Baca Komik Webtoon, dan Live TV 80+ Channel dalam desain 100% Monochrome Glassmorphism.",
+                synopsis = "Streaming Anime Animasu, Animasi Donghua Anichin, Baca Komik Bacakomik, dan Live TV 80+ Channel dalam desain 100% Monochrome Glassmorphism.",
                 rating = "9.9",
                 year = "2026",
-                genres = listOf("Anime", "Donghua", "Webtoon", "Live TV")
+                genres = listOf("Anime", "Donghua", "Komik", "Live TV")
             )
         )
 
@@ -37,10 +37,9 @@ class MediaRepository {
             }
             val donghua = DonghuaScraper.getLatest(1)
             val komik = try {
-                val s = BacakomikScraper.getLatest(1)
-                if (s.isNotEmpty()) s else WebtoonScraper.getHome()
+                BacakomikScraper.getLatest(1)
             } catch (e: Exception) {
-                WebtoonScraper.getHome()
+                emptyList()
             }
 
             if (anime.isNotEmpty()) list.add(anime[0])
@@ -81,7 +80,7 @@ class MediaRepository {
     }
 
     suspend fun getMangaHome(): List<MediaItem> = withContext(Dispatchers.IO) {
-        val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
+        val res = kotlinx.coroutines.withTimeoutOrNull(6000) {
             try {
                 val s = BacakomikScraper.getHome()
                 if (s.isNotEmpty()) s else null
@@ -91,23 +90,17 @@ class MediaRepository {
         }
         if (!res.isNullOrEmpty()) return@withContext res
 
-        val res2 = kotlinx.coroutines.withTimeoutOrNull(3000) {
-            try {
-                val s = WebtoonScraper.getHome()
-                if (s.isNotEmpty()) s else null
-            } catch (e: Exception) {
-                null
-            }
-        }
-        if (!res2.isNullOrEmpty()) return@withContext res2
-
-        getFallbackWebtoon()
+        getFallbackKomikList()
     }
 
-    suspend fun getWebtoonSchedule(daySlug: String): List<MediaItem> = withContext(Dispatchers.IO) {
-        val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
+    suspend fun getKomikByType(type: String, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
+        val res = kotlinx.coroutines.withTimeoutOrNull(6000) {
             try {
-                val s = BacakomikScraper.getLatest(1)
+                val s = if (type.equals("terbaru", ignoreCase = true)) {
+                    BacakomikScraper.getLatest(page)
+                } else {
+                    BacakomikScraper.getByType(type, page)
+                }
                 if (s.isNotEmpty()) s else null
             } catch (e: Exception) {
                 null
@@ -115,7 +108,7 @@ class MediaRepository {
         }
         if (!res.isNullOrEmpty()) return@withContext res
 
-        getFallbackWebtoonSchedule(daySlug)
+        getFallbackKomikList()
     }
 
     suspend fun getAnimeSchedule(dayIndex: Int): List<MediaItem> = withContext(Dispatchers.IO) {
@@ -212,7 +205,7 @@ class MediaRepository {
                     CategoryType.DONGHUA -> results.addAll(DonghuaScraper.search(query, page))
                     CategoryType.MANGA -> {
                         val kom = BacakomikScraper.search(query, page)
-                        if (kom.isNotEmpty()) results.addAll(kom) else results.addAll(WebtoonScraper.search(query))
+                        if (kom.isNotEmpty()) results.addAll(kom)
                     }
                     CategoryType.DRACHINA -> results.addAll(DracinemaScraper.search(query))
                     CategoryType.MOVIES -> results.addAll(MovieBoxScraper.search(query))
@@ -228,10 +221,9 @@ class MediaRepository {
                         val donghuaAsync = async { DonghuaScraper.search(query, 1) }
                         val mangaAsync = async {
                             try {
-                                val s = BacakomikScraper.search(query, 1)
-                                if (s.isNotEmpty()) s else WebtoonScraper.search(query)
+                                BacakomikScraper.search(query, 1)
                             } catch (e: Exception) {
-                                WebtoonScraper.search(query)
+                                emptyList()
                             }
                         }
                         val drachinAsync = async { DracinemaScraper.search(query) }
@@ -281,12 +273,7 @@ class MediaRepository {
                     }
                     CategoryType.MANGA -> {
                         val bkList = BacakomikScraper.search(cleanQ).take(6).map { it.title }
-                        if (bkList.isNotEmpty()) {
-                            bkList.forEach { add(it) }
-                        } else {
-                            val mbList = WebtoonScraper.search(cleanQ).take(6).map { it.title }
-                            mbList.forEach { add(it) }
-                        }
+                        bkList.forEach { add(it) }
                     }
                     CategoryType.DRACHINA -> {
                         val dcList = DracinemaScraper.search(cleanQ).take(6).map { it.title }
@@ -349,8 +336,8 @@ class MediaRepository {
                     }
                     CategoryType.DONGHUA -> DonghuaScraper.getDetail(idOrSlug)
                     CategoryType.MANGA -> {
-                        // 1. Primary: Bacakomik
-                        val bkDetail = kotlinx.coroutines.withTimeoutOrNull(4500) {
+                        // 100% Bacakomik
+                        val bkDetail = kotlinx.coroutines.withTimeoutOrNull(6000) {
                             try {
                                 BacakomikScraper.getDetail(idOrSlug)
                             } catch (e: Exception) {
@@ -359,17 +346,7 @@ class MediaRepository {
                         }
                         if (bkDetail != null && bkDetail.chapters.isNotEmpty()) return@withContext bkDetail
 
-                        // 2. Secondary: Webtoon
-                        val wtDetail = kotlinx.coroutines.withTimeoutOrNull(3000) {
-                            try {
-                                WebtoonScraper.getDetail(idOrSlug)
-                            } catch (e: Exception) {
-                                null
-                            }
-                        }
-                        if (wtDetail != null && wtDetail.chapters.isNotEmpty()) return@withContext wtDetail
-
-                        getFallbackWebtoonDetail(idOrSlug)
+                        getFallbackKomikDetail(idOrSlug)
                     }
                     CategoryType.DRACHINA -> DracinemaScraper.getDetail(idOrSlug)
                     CategoryType.MOVIES -> MovieBoxScraper.getDetail(idOrSlug)
@@ -380,7 +357,7 @@ class MediaRepository {
             } catch (e: Exception) {
                 e.printStackTrace()
                 if (category == CategoryType.ANIME) getFallbackAnimeDetail(idOrSlug)
-                else if (category == CategoryType.MANGA) getFallbackWebtoonDetail(idOrSlug)
+                else if (category == CategoryType.MANGA) getFallbackKomikDetail(idOrSlug)
                 else null
             }
         }
@@ -410,7 +387,7 @@ class MediaRepository {
                                     epUrl = epUrl.replace(Regex("""-episode-\d+""", RegexOption.IGNORE_CASE), "-episode-$episode")
                                 }
                             }
-                            val stream = kotlinx.coroutines.withTimeoutOrNull(5000) {
+                            val stream = kotlinx.coroutines.withTimeoutOrNull(8500) {
                                 try {
                                     AnimasuScraper.getStream(epUrl)
                                 } catch (e: Exception) {
@@ -492,13 +469,11 @@ class MediaRepository {
         val cleanId = chapterId.trim()
         val targetUrl = when {
             cleanId.startsWith("http") -> cleanId
-            cleanId.contains("chapter") -> "https://bacakomik.my/$cleanId"
-            cleanId.contains("title_no") || cleanId.contains("episode_no") -> "https://www.webtoons.com/id/$cleanId"
             else -> "https://bacakomik.my/$cleanId"
         }
 
-        // 1. Primary: Bacakomik
-        val res = kotlinx.coroutines.withTimeoutOrNull(5000) {
+        // 100% Bacakomik
+        val res = kotlinx.coroutines.withTimeoutOrNull(6000) {
             try {
                 val list = BacakomikScraper.getPages(targetUrl)
                 if (list.isNotEmpty()) list else null
@@ -508,26 +483,12 @@ class MediaRepository {
         }
         if (!res.isNullOrEmpty()) return@withContext res
 
-        // 2. Secondary: Webtoon
-        val res2 = kotlinx.coroutines.withTimeoutOrNull(4000) {
-            try {
-                val list = WebtoonScraper.getPages(targetUrl)
-                if (list.isNotEmpty()) list else null
-            } catch (e: Exception) {
-                null
-            }
-        }
-        if (!res2.isNullOrEmpty()) return@withContext res2
-
         getFallbackMangaPages()
     }
 
     fun getFallbackMangaPages(): List<MangaPageItem> = listOf(
-        MangaPageItem(1, "https://webtoon-phinf.pstatic.net/20221212_148/1670822776204rlFgs_PNG/thumb_16708227084656063_Serena_00_01_04.png"),
-        MangaPageItem(2, "https://webtoon-phinf.pstatic.net/20221212_294/1670829623744sWIuU_PNG/thumb_16708295446226361_Serena_01_0121.png"),
-        MangaPageItem(3, "https://webtoon-phinf.pstatic.net/20221212_291/1670841989803NbD9p_PNG/thumb_16708410697456929_Serena_2_12_01.png"),
-        MangaPageItem(4, "https://webtoon-phinf.pstatic.net/20221212_16/1670822830880h3W0p_PNG/thumb_16708227084656063_Serena_00_01_05.png"),
-        MangaPageItem(5, "https://webtoon-phinf.pstatic.net/20221212_65/1670829678129QzP4E_PNG/thumb_16708295446226361_Serena_01_0122.png")
+        MangaPageItem(1, "https://imageainewgeneration.lol/data/16178048/1/852c511e01fff338c2278e95f65f730a/JKwkTX4z9z0OmczzYmLgl3vmwhqcr0D7QwgbrJU5.jpg"),
+        MangaPageItem(2, "https://imageainewgeneration.lol/data/16178048/1/852c511e01fff338c2278e95f65f730a/6u1q1XFjB2vNrm6yVzCqH4zYtGpF3kL7uNxQ5vRw.jpg")
     )
 
     // Fallbacks
@@ -559,9 +520,11 @@ class MediaRepository {
         MediaItem("donghua_2", "Battle Through the Heavens Season 5", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2026/02/BTTH-Season-5-Subtitle-Indonesia.webp", "https://anichin.ro/battle-through-the-heavens-season-5-subtitle-indonesia/", "btth-season-5", "Ep 128")
     )
 
-    fun getFallbackWebtoon(): List<MediaItem> = listOf(
-        MediaItem("5001", "Serena", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20260804_80/1785821073225nPwjs_JPEG/4Thumb_Poster.jpg?type=q90", "https://www.webtoons.com/id/romantic-fantasy/serena/list?title_no=5001", "5001", "Webtoon"),
-        MediaItem("4834", "The Greatest Estate Developer", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20250205_17/1738719483097MIbul_JPEG/4834.jpg?type=q90", "https://www.webtoons.com/id/fantasy/the-greatest-estate-developer/list?title_no=4834", "4834", "Webtoon")
+    fun getFallbackKomikList(): List<MediaItem> = listOf(
+        MediaItem("rank-no-ura-soubi-musou", "Rank no Ura Soubi Musou", CategoryType.MANGA, "https://i2.wp.com/bacakomik.my/wp-content/uploads/2024/04/Komik-Rank-no-Ura-Soubi-Musou.jpg?resize=146,208", "https://bacakomik.my/komik/rank-no-ura-soubi-musou/", "rank-no-ura-soubi-musou", "Manga • Ch 94", "Manga"),
+        MediaItem("bijin-de-okane-mochi", "Bijin de Okane Mochi no Kanojo", CategoryType.MANGA, "https://i2.wp.com/bacakomik.my/wp-content/uploads/2026/09/Komik-Bijin-de-Okane-Mochi-no-Kanojo-ga-Hoshii-to-Ittara-Wake-Ari-Joshi-ga-Yattekita-Ken.jpg?resize=146,208", "https://bacakomik.my/komik/bijin-de-okane-mochi-no-kanojo-ga-hoshii-to-ittara-wake-ari-joshi-ga-yattekita-ken/", "bijin-de-okane-mochi", "Manga • Ch 21", "Manga"),
+        MediaItem("martial-peak", "Martial Peak", CategoryType.MANGA, "https://i2.wp.com/bacakomik.my/wp-content/uploads/2020/01/Komik-Martial-Peak.jpg?resize=146,208", "https://bacakomik.my/komik/martial-peak/", "martial-peak", "Manhua • Ch 3750", "Manhua"),
+        MediaItem("solo-leveling-ragnarok", "Solo Leveling: Ragnarok", CategoryType.MANGA, "https://i2.wp.com/bacakomik.my/wp-content/uploads/2024/08/Komik-Solo-Leveling-Ragnarok.jpg?resize=146,208", "https://bacakomik.my/komik/solo-leveling-ragnarok/", "solo-leveling-ragnarok", "Manhwa • Ch 45", "Manhwa")
     )
 
     fun getFallbackAnimeSchedule(dayIndex: Int): List<MediaItem> {
@@ -586,15 +549,6 @@ class MediaRepository {
         )
     }
 
-    fun getFallbackWebtoonSchedule(daySlug: String): List<MediaItem> {
-        return listOf(
-            MediaItem("5001", "Serena", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20260804_80/1785821073225nPwjs_JPEG/4Thumb_Poster.jpg?type=q90", "https://www.webtoons.com/id/romantic-fantasy/serena/list?title_no=5001", "5001", "Webtoon"),
-            MediaItem("11152", "The Corrupt Tyrant’s Obsession", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20260903_139/1788413418613Asfyr_JPEG/9Thumb_Poster.jpg?type=q90", "https://www.webtoons.com/id/romantic-fantasy/the-corrupt-tyrants-obession/list?title_no=11152", "11152", "Webtoon"),
-            MediaItem("3085", "WEE!!!", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20250828_293/1756373680374gUKf3_JPEG/Thumb_Poster.jpg?type=q90", "https://www.webtoons.com/id/slice-of-life/wee/list?title_no=3085", "3085", "Webtoon"),
-            MediaItem("4834", "The Greatest Estate Developer", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20250205_17/1738719483097MIbul_JPEG/4834.jpg?type=q90", "https://www.webtoons.com/id/fantasy/the-greatest-estate-developer/list?title_no=4834", "4834", "Webtoon")
-        )
-    }
-
     private fun getFallbackAnimeDetail(idOrSlug: String): MediaDetail {
         return MediaDetail(
             id = idOrSlug,
@@ -613,20 +567,20 @@ class MediaRepository {
         )
     }
 
-    private fun getFallbackWebtoonDetail(idOrSlug: String): MediaDetail {
+    private fun getFallbackKomikDetail(idOrSlug: String): MediaDetail {
         return MediaDetail(
             id = idOrSlug,
-            title = "Serena",
+            title = "Rank no Ura Soubi Musou",
             category = CategoryType.MANGA,
-            thumbnail = "https://webtoon-phinf.pstatic.net/20260804_80/1785821073225nPwjs_JPEG/4Thumb_Poster.jpg?type=q90",
-            synopsis = "Serena, satu-satunya pewaris keluarga Serenity, terpaksa menikah demi menyelamatkan keluarganya.",
-            genres = listOf("Kerajaan", "Romance", "Drama"),
+            thumbnail = "https://i2.wp.com/bacakomik.my/wp-content/uploads/2024/04/Komik-Rank-no-Ura-Soubi-Musou.jpg?resize=146,208",
+            synopsis = "Mengisahkan petualangan seorang pemuda yang memperoleh perlengkapan rahasia berkekuatan tak terduga dalam perjalanannya menaklukkan dungeon.",
+            genres = listOf("Action", "Adventure", "Fantasy"),
             status = "Ongoing",
-            totalEpisodes = "100+ Episode",
+            totalEpisodes = "Chapter 94",
             chapters = listOf(
-                MangaChapterItem("https://www.webtoons.com/id/romantic-fantasy/serena/ep-136-menarik-napas-damai/viewer?title_no=5001&episode_no=137", "Episode 136", "Ep 136", "Terbaru"),
-                MangaChapterItem("https://www.webtoons.com/id/romantic-fantasy/serena/ep-135-melainkan-kau/viewer?title_no=5001&episode_no=136", "Episode 135", "Ep 135", "Kemarin"),
-                MangaChapterItem("https://www.webtoons.com/id/romantic-fantasy/serena/ep-134-hal-yang-kucintai/viewer?title_no=5001&episode_no=135", "Episode 134", "Ep 134", "Minggu lalu")
+                MangaChapterItem("https://bacakomik.my/rank-no-ura-soubi-musou-chapter-94/", "Chapter 94", "Ch 94", "Terbaru"),
+                MangaChapterItem("https://bacakomik.my/rank-no-ura-soubi-musou-chapter-93/", "Chapter 93", "Ch 93", "Kemarin"),
+                MangaChapterItem("https://bacakomik.my/rank-no-ura-soubi-musou-chapter-1/", "Chapter 1", "Ch 1", "Awal")
             )
         )
     }

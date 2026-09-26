@@ -29,10 +29,10 @@ Aplikasi Android Native modern berbasis **Kotlin + Jetpack Compose** dengan desa
 - Pilihan server streaming dinamis (Lite, Fast, Max, Embed).
 - Navigasi cepat episode (Episode Selanjutnya & Sebelumnya).
 
-### 4. 📖 Pembaca Komik & Webtoon Cepat (Native AES Decryption)
-- **Webtoon Mode**: Gulir vertikal berkelanjutan (*continuous vertical scroll*).
+### 4. 📖 Pembaca Komik Cepat (Manga, Manhwa & Manhua - Bacakomik)
+- **Mode Vertikal**: Gulir vertikal berkelanjutan (*continuous vertical scroll*).
 - **Mode Per Halaman**: Membaca santai halaman demi halaman.
-- **Engine Dekripsi Native Kotlin**: Gambar terenkripsi `.webp.enc` didekripsi secara instan menggunakan `javax.crypto.Cipher` (AES-256-CBC) langsung di latar belakang perangkat tanpa lemot.
+- **Engine Pembaca Terpadu**: Mengambil langsung chapter dan gambar komik dari Bacakomik dengan perlindungan referer anti-blokir.
 
 ### 5. 📺 Siaran Langsung 80+ Channel TV
 - Trans TV, Trans7, CNN Indonesia, CNBC Indonesia, SCTV, Indosiar, tvN Movies, dll.
@@ -44,7 +44,7 @@ Aplikasi Android Native modern berbasis **Kotlin + Jetpack Compose** dengan desa
 
 - **Nama Aplikasi**: NanzStream
 - **Package Name**: `com.nanzstream.nanas`
-- **Versi**: `1.0.0` (Version Code: 1)
+- **Versi**: `1.3.15` (Version Code: 45)
 - **Min SDK**: Android 7.0 (API 24)
 - **Target SDK**: Android 15 (API 35)
 - **UI Framework**: Android Jetpack Compose + Material 3

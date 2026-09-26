@@ -57,9 +57,15 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.nanzstream.nanas.data.remote.ApiClient
 import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.ExoPlayer
+import android.view.View
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,6 +92,14 @@ import com.nanzstream.nanas.data.model.StreamResult
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.data.scraper.StreamResolver
 import com.nanzstream.nanas.ui.theme.*
+
+private fun isDirectStreamUrl(url: String): Boolean {
+    val u = url.lowercase().trim()
+    return u.contains(".m3u8") || u.contains(".mp4") || u.contains(".mpd") ||
+           u.contains("googlevideo.com") || u.contains("hls_variant") ||
+           u.contains("hls_playlist") || u.contains(".mkv") || u.contains(".webm") ||
+           u.contains("/hls/") || u.contains("-cdn.com")
+}
 
 private fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -162,6 +176,12 @@ fun VideoPlayerScreen(
     var autoRetryCount by remember { mutableIntStateOf(0) }
     var currentServerIndex by remember { mutableIntStateOf(0) }
     var streamError by remember { mutableStateOf<String?>(null) }
+
+    // In-App Web Player support for iframe embeds (Naruto Movie 6, TeraBox, BerkasDrive, AbyssPlayer)
+    var useWebPlayer by remember { mutableStateOf(false) }
+    var webEmbedUrl by remember { mutableStateOf("") }
+    var webViewCustomView by remember { mutableStateOf<View?>(null) }
+    var webViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
 
     // Clean human-readable display title (resolves original title instead of raw IDs/numbers)
     val displayTitle = remember(title, streamResult) {
@@ -265,8 +285,13 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Handle back button when in fullscreen mode
-    BackHandler(enabled = isFullscreen) {
+    // Handle back button when in fullscreen mode or web custom view
+    BackHandler(enabled = isFullscreen || webViewCustomView != null) {
+        if (webViewCustomView != null) {
+            webViewCallback?.onCustomViewHidden()
+            webViewCustomView = null
+            webViewCallback = null
+        }
         isFullscreen = false
         setSystemFullscreen(activity, false)
     }
@@ -277,7 +302,12 @@ fun VideoPlayerScreen(
             override fun onPlayerError(error: PlaybackException) {
                 error.printStackTrace()
                 val servers = streamResult?.servers.orEmpty()
-                if (autoRetryCount < 2) {
+                if (webEmbedUrl.isNotBlank() && !useWebPlayer) {
+                    // Automatically fallback to in-app Web Player if native player throws error!
+                    useWebPlayer = true
+                    isLoading = false
+                    streamError = null
+                } else if (autoRetryCount < 2) {
                     autoRetryCount++
                     isLoading = true
                     exoPlayer.prepare()
@@ -288,7 +318,7 @@ fun VideoPlayerScreen(
                     autoRetryCount = 0
                 } else {
                     isLoading = false
-                    streamError = "Gagal memutar video. Silakan coba beberapa saat lagi."
+                    streamError = "Gagal memutar video secara native. Coba aktifkan mode Web Player atau pilih server lain."
                 }
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -348,6 +378,7 @@ fun VideoPlayerScreen(
             val chosenAudioUrl = chosenServerItem?.audioUrl ?: res?.audioUrl
 
             if (chosenServerUrl.isNotBlank()) {
+                webEmbedUrl = chosenServerUrl
                 val defaultReferer = when (category) {
                     CategoryType.ANIME -> "https://animasu.love/"
                     CategoryType.DRACHINA -> "https://www.dracinema.com/"
@@ -355,9 +386,19 @@ fun VideoPlayerScreen(
                     CategoryType.YOUTUBE -> "https://www.youtube.com/"
                     else -> "https://anichin.ro/"
                 }
-                val playableUrl = StreamResolver.resolveToDirectStream(chosenServerUrl, defaultReferer)
 
-                if (playableUrl.isNotBlank()) {
+                // Check whether chosen server is direct HLS/MP4 or an embed
+                val isServerDirect = chosenServerItem?.isDirectHls == true || isDirectStreamUrl(chosenServerUrl)
+                val playableUrl = if (isServerDirect) {
+                    StreamResolver.resolveToDirectStream(chosenServerUrl, defaultReferer)
+                } else {
+                    val resolved = StreamResolver.resolveToDirectStream(chosenServerUrl, defaultReferer)
+                    if (isDirectStreamUrl(resolved)) resolved else chosenServerUrl
+                }
+
+                val hasDirectStream = isDirectStreamUrl(playableUrl)
+
+                if (hasDirectStream && !useWebPlayer) {
                     val isYouTubeOrGoogle = category == CategoryType.YOUTUBE || playableUrl.contains("googlevideo.com", ignoreCase = true)
                     val userAgent = if (isYouTubeOrGoogle) {
                         "com.google.ios.youtube/21.03.2 (iPhone16,2; U; CPU iOS 18_7_2 like Mac OS X; id_ID)"
@@ -426,8 +467,10 @@ fun VideoPlayerScreen(
                     exoPlayer.prepare()
                     exoPlayer.play()
                 } else {
+                    // Activate in-app hardware-accelerated Web Player!
+                    useWebPlayer = true
+                    exoPlayer.pause()
                     isLoading = false
-                    streamError = "Tautan video tidak dapat diputar."
                 }
             } else {
                 isLoading = false
@@ -559,9 +602,9 @@ fun VideoPlayerScreen(
                     }
                 }
 
-                // 2. Fixed Video Player Area (100% Native ExoPlayer PlayerView - ZERO WEBVIEW)
+                // 2. Video Player Area (Dual Mode: Native ExoPlayer + Hardware-Accelerated In-App Web Player)
                 Box(
-                    modifier = if (isFullscreen) {
+                    modifier = if (isFullscreen || webViewCustomView != null) {
                         Modifier
                             .fillMaxSize()
                             .background(Color.Black)
@@ -573,17 +616,127 @@ fun VideoPlayerScreen(
                     },
                     contentAlignment = Alignment.Center
                 ) {
-                    AndroidView(
-                        factory = {
-                            playerViewInstance.apply {
-                                useController = true
-                            }
-                        },
-                        update = { pv ->
-                            pv.useController = true
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    if (webViewCustomView != null) {
+                        AndroidView(
+                            factory = { webViewCustomView!! },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else if (useWebPlayer) {
+                        AndroidView(
+                            factory = { ctx ->
+                                WebView(ctx).apply {
+                                    layoutParams = ViewGroup.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                                    setBackgroundColor(android.graphics.Color.BLACK)
+                                    settings.apply {
+                                        javaScriptEnabled = true
+                                        domStorageEnabled = true
+                                        mediaPlaybackRequiresUserGesture = false
+                                        allowContentAccess = true
+                                        allowFileAccess = true
+                                        databaseEnabled = true
+                                        useWideViewPort = true
+                                        loadWithOverviewMode = true
+                                        setSupportMultipleWindows(false)
+                                        javaScriptCanOpenWindowsAutomatically = false
+                                        userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                                    }
+                                    webChromeClient = object : WebChromeClient() {
+                                        override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                                            webViewCustomView = view
+                                            webViewCallback = callback
+                                            setSystemFullscreen(activity, true)
+                                            isFullscreen = true
+                                        }
+                                        override fun onHideCustomView() {
+                                            webViewCustomView = null
+                                            webViewCallback?.onCustomViewHidden()
+                                            webViewCallback = null
+                                            setSystemFullscreen(activity, false)
+                                            isFullscreen = false
+                                        }
+                                    }
+                                    webViewClient = object : WebViewClient() {
+                                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                            val u = request?.url?.toString().orEmpty()
+                                            if (u.contains("abyssplayer") || u.contains("animasu") || u.contains("terabox") ||
+                                                u.contains("berkasdrive") || u.contains("blogger") || u.contains("mega.nz") ||
+                                                u.contains("filedon") || u.contains("vidhide") || u.contains("yourupload") ||
+                                                u.contains("ok.ru") || u.contains("iamcdn.net") || u.contains("google")
+                                            ) {
+                                                return false
+                                            }
+                                            return true
+                                        }
+                                        override fun onPageFinished(view: WebView?, url: String?) {
+                                            super.onPageFinished(view, url)
+                                            isLoading = false
+                                        }
+                                    }
+                                }
+                            },
+                            update = { wv ->
+                                val target = webEmbedUrl.ifBlank { chosenServerUrl }
+                                if (target.isNotBlank()) {
+                                    val iframeHtml = """
+                                        <!DOCTYPE html>
+                                        <html>
+                                        <head>
+                                          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                          <style>
+                                            * { box-sizing: border-box; }
+                                            html, body {
+                                              margin: 0;
+                                              padding: 0;
+                                              width: 100%;
+                                              height: 100%;
+                                              background-color: #000000;
+                                              overflow: hidden;
+                                            }
+                                            iframe {
+                                              width: 100%;
+                                              height: 100%;
+                                              border: 0;
+                                              display: block;
+                                            }
+                                          </style>
+                                        </head>
+                                        <body>
+                                          <iframe 
+                                            src="$target" 
+                                            allow="autoplay; fullscreen; encrypted-media; picture-in-picture" 
+                                            allowfullscreen="true">
+                                          </iframe>
+                                        </body>
+                                        </html>
+                                    """.trimIndent()
+                                    val baseUrl = when (category) {
+                                        CategoryType.ANIME -> "https://animasu.love/"
+                                        CategoryType.DRACHINA -> "https://www.dracinema.com/"
+                                        CategoryType.MOVIES -> "https://themoviebox.xyz/"
+                                        else -> "https://anichin.ro/"
+                                    }
+                                    wv.loadDataWithBaseURL(baseUrl, iframeHtml, "text/html", "UTF-8", null)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        AndroidView(
+                            factory = {
+                                playerViewInstance.apply {
+                                    useController = true
+                                }
+                            },
+                            update = { pv ->
+                                pv.useController = true
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
 
                     // Buffering Spinner Overlay during initial load or lag
                     if (isLoading) {
@@ -625,6 +778,9 @@ fun VideoPlayerScreen(
                                             autoRetryCount = 0
                                             streamError = null
                                             isLoading = true
+                                            if (useWebPlayer) {
+                                                useWebPlayer = false
+                                            }
                                             exoPlayer.prepare()
                                             exoPlayer.play()
                                         }
@@ -637,7 +793,7 @@ fun VideoPlayerScreen(
                         }
                     }
 
-                    // Floating Controls for PiP & Fullscreen Toggle overlay
+                    // Floating Controls for PiP, Mode Switcher & Fullscreen Toggle overlay
                     if (isFullscreen) {
                         // Exit Fullscreen Floating Button (Top Left)
                         Box(
@@ -649,6 +805,11 @@ fun VideoPlayerScreen(
                                 .background(Color(0x99000000))
                                 .border(1.dp, GlassBorder, CircleShape)
                                 .clickable {
+                                    if (webViewCustomView != null) {
+                                        webViewCallback?.onCustomViewHidden()
+                                        webViewCustomView = null
+                                        webViewCallback = null
+                                    }
                                     isFullscreen = false
                                     setSystemFullscreen(activity, false)
                                 },
@@ -662,7 +823,7 @@ fun VideoPlayerScreen(
                             )
                         }
                     } else {
-                        // Overlay Actions (Top Right: PiP & Fullscreen)
+                        // Overlay Actions (Top Right: Mode Toggle, PiP & Fullscreen)
                         Row(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
@@ -670,6 +831,33 @@ fun VideoPlayerScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // Player Mode Switcher Toggle Button
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(if (useWebPlayer) AccentCyan.copy(alpha = 0.85f) else Color(0x88000000))
+                                    .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
+                                    .clickable {
+                                        if (useWebPlayer) {
+                                            useWebPlayer = false
+                                            exoPlayer.prepare()
+                                            exoPlayer.play()
+                                        } else {
+                                            useWebPlayer = true
+                                            exoPlayer.pause()
+                                        }
+                                    }
+                                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (useWebPlayer) "🌐 Web" else "⚡ Native",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
                             // Picture-in-Picture Button
                             Box(
                                 modifier = Modifier
@@ -1139,6 +1327,75 @@ fun VideoPlayerScreen(
                                 color = TextMuted,
                                 fontSize = 13.sp
                             )
+
+                            // Server / Mirror Selector
+                            val availableServers = streamResult?.servers.orEmpty()
+                            if (availableServers.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "SERVER & RESOLUSI",
+                                        color = TextDim,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.sp
+                                    )
+                                    Text(
+                                        text = if (useWebPlayer) "Mode: Web Player 🌐" else "Mode: Native Player ⚡",
+                                        color = AccentCyan,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    itemsIndexed(availableServers) { idx, srv ->
+                                        val isSelected = idx == currentServerIndex
+                                        val isDirect = srv.isDirectHls || isDirectStreamUrl(srv.url)
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .border(
+                                                    1.5.dp,
+                                                    if (isSelected) Color.White else BorderHairline,
+                                                    RoundedCornerShape(8.dp)
+                                                )
+                                                .background(if (isSelected) Color.White else SurfaceElevated)
+                                                .clickable {
+                                                    currentServerIndex = idx
+                                                    useWebPlayer = !isDirect
+                                                    if (!isDirect) {
+                                                        exoPlayer.pause()
+                                                    }
+                                                }
+                                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = srv.name,
+                                                    color = if (isSelected) CanvasBlack else TextPrimary,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
+                                                )
+                                                Text(
+                                                    text = if (isDirect) "⚡" else "🌐",
+                                                    fontSize = 10.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
 
                             val uriHandler = LocalUriHandler.current
                             val downloads = streamResult?.downloads.orEmpty()

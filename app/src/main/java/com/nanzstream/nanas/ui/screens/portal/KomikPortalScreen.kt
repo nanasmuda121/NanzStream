@@ -44,15 +44,13 @@ import com.nanzstream.nanas.NanzStreamApp
 import com.nanzstream.nanas.data.model.CategoryType
 import com.nanzstream.nanas.data.model.MediaItem
 import com.nanzstream.nanas.data.repository.MediaRepository
-import com.nanzstream.nanas.ui.components.DayScheduleBar
 import com.nanzstream.nanas.ui.components.MediaItemCard
-import com.nanzstream.nanas.ui.components.SCHEDULE_DAYS
-import com.nanzstream.nanas.ui.components.getTodayScheduleIndex
 import com.nanzstream.nanas.ui.theme.*
 import java.io.File
+import androidx.compose.material.icons.filled.Book
 
 private enum class KomikTab(val title: String, val icon: ImageVector) {
-    JADWAL("Jadwal", Icons.Default.CalendarToday),
+    KOMIK("Komik", Icons.Default.Book),
     OFFLINE("Offline", Icons.Default.DownloadDone),
     SEARCH("Cari", Icons.Default.Search)
 }
@@ -65,12 +63,12 @@ fun KomikPortalScreen(
     onReadOfflineChapter: (mangaId: String, chapterId: String, chapterTitle: String) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
-    var currentTab by remember { mutableStateOf(KomikTab.JADWAL) }
-    val todayIndex = remember { getTodayScheduleIndex() }
-    var selectedDayIndex by remember { mutableIntStateOf(todayIndex) }
-    var scheduleCache by remember { mutableStateOf<Map<Int, List<MediaItem>>>(emptyMap()) }
+    var currentTab by remember { mutableStateOf(KomikTab.KOMIK) }
+    val categories = remember { listOf("Terbaru", "Manga", "Manhwa", "Manhua") }
+    var selectedCategory by remember { mutableStateOf("Terbaru") }
+    var categoryCache by remember { mutableStateOf<Map<String, List<MediaItem>>>(emptyMap()) }
     var komikList by remember {
-        mutableStateOf(repository.getFallbackWebtoonSchedule(SCHEDULE_DAYS[todayIndex].webtoonSlug))
+        mutableStateOf(repository.getFallbackKomikList())
     }
     var searchResults by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var searchSuggestions by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -79,20 +77,20 @@ fun KomikPortalScreen(
     var refreshTrigger by remember { mutableIntStateOf(0) }
     val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(currentTab, selectedDayIndex, refreshTrigger) {
-        if (currentTab == KomikTab.JADWAL) {
-            val cached = scheduleCache[selectedDayIndex]
+    LaunchedEffect(currentTab, selectedCategory, refreshTrigger) {
+        if (currentTab == KomikTab.KOMIK) {
+            val catKey = selectedCategory.lowercase()
+            val cached = categoryCache[catKey]
             if (cached != null && cached.isNotEmpty() && refreshTrigger == 0) {
                 komikList = cached
                 isLoading = false
             } else {
                 isLoading = true
                 try {
-                    val daySlug = SCHEDULE_DAYS[selectedDayIndex].webtoonSlug
-                    val items = repository.getWebtoonSchedule(daySlug)
+                    val items = repository.getKomikByType(catKey)
                     komikList = items
                     if (items.isNotEmpty()) {
-                        scheduleCache = scheduleCache + (selectedDayIndex to items)
+                        categoryCache = categoryCache + (catKey to items)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -256,13 +254,35 @@ fun KomikPortalScreen(
                 .background(CanvasBlack)
         ) {
             when (currentTab) {
-                KomikTab.JADWAL -> {
+                KomikTab.KOMIK -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        DayScheduleBar(
-                            selectedDayIndex = selectedDayIndex,
-                            onSelectDay = { selectedDayIndex = it },
-                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
-                        )
+                        // Category Pills (Terbaru, Manga, Manhwa, Manhua)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            categories.forEach { cat ->
+                                val isSelected = selectedCategory == cat
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(100.dp))
+                                        .background(if (isSelected) Color.White else SurfaceElevated)
+                                        .border(1.dp, if (isSelected) Color.White else GlassBorder, RoundedCornerShape(100.dp))
+                                        .clickable { selectedCategory = cat }
+                                        .padding(horizontal = 16.dp, vertical = 7.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = cat,
+                                        color = if (isSelected) Color.Black else TextMuted,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
 
                         if (isLoading && komikList.isEmpty()) {
                             Box(
@@ -280,7 +300,7 @@ fun KomikPortalScreen(
                                 verticalArrangement = Arrangement.Center
                             ) {
                                 Text(
-                                    text = "Gagal memuat jadwal komik",
+                                    text = "Gagal memuat komik",
                                     color = TextMuted,
                                     fontSize = 14.sp
                                 )

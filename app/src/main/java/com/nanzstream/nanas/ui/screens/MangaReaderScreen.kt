@@ -225,7 +225,7 @@ fun MangaReaderScreen(
                 }
             }
         } else {
-            // Continuous Vertical Webtoon Scroll
+            // Continuous Vertical Scroll
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
@@ -402,7 +402,7 @@ fun MangaReaderScreen(
                             maxLines = 1
                         )
                         Text(
-                            text = if (isDownloaded) "${pages.size} Halaman • Mode Offline" else "${pages.size} Halaman • Webtoon Mode",
+                            text = if (isDownloaded) "${pages.size} Halaman • Mode Offline" else "${pages.size} Halaman • Mode Vertikal",
                             color = if (isDownloaded) Color(0xFF10B981) else TextMuted,
                             fontSize = 11.sp,
                             fontWeight = if (isDownloaded) FontWeight.Bold else FontWeight.Normal
@@ -476,7 +476,7 @@ fun MangaReaderScreen(
                                     downloadProgress = "0%"
                                     val success = NanzStreamApp.offlineManga.downloadChapter(
                                         mangaId = mangaId,
-                                        mangaTitle = "Komik Webtoon",
+                                        mangaTitle = "Komik",
                                         chapterId = currentChapterId,
                                         chapterTitle = activeChapterTitle,
                                         thumbnail = pages.firstOrNull()?.url ?: "",
@@ -669,9 +669,7 @@ fun MangaPageView(page: MangaPageItem) {
             val imageModel = if (isLocalFile) {
                 File(page.url.removePrefix("file://"))
             } else {
-                val referer = if (page.url.contains("webtoon") || page.url.contains("pstatic.net")) {
-                    "https://www.webtoons.com/"
-                } else if (page.url.contains("animasu")) {
+                val referer = if (page.url.contains("animasu")) {
                     "https://animasu.love/"
                 } else {
                     "https://bacakomik.my/"
