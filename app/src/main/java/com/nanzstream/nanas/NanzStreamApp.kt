@@ -71,8 +71,8 @@ class NanzStreamApp : Application(), ImageLoaderFactory {
                         }
                         chain.proceed(builder.build())
                     }
-                    .connectTimeout(10, TimeUnit.SECONDS)
-                    .readTimeout(12, TimeUnit.SECONDS)
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
                     .build()
             }
             .respectCacheHeaders(false)

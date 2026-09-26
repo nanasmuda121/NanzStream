@@ -43,6 +43,12 @@ import com.nanzstream.nanas.data.model.MangaChapterItem
 import com.nanzstream.nanas.data.model.MangaPageItem
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.ui.theme.*
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -65,6 +71,7 @@ fun MangaReaderScreen(
     var pages by remember { mutableStateOf<List<MangaPageItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var showControls by remember { mutableStateOf(true) }
+    var useWebReader by remember { mutableStateOf(false) }
 
     var isDownloaded by remember(currentChapterId) {
         mutableStateOf(NanzStreamApp.offlineManga.isChapterDownloaded(currentChapterId))
@@ -173,7 +180,46 @@ fun MangaReaderScreen(
             .background(Color.Black)
             .clickable { showControls = !showControls }
     ) {
-        if (isLoading) {
+        if (useWebReader) {
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                        setBackgroundColor(android.graphics.Color.BLACK)
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            allowContentAccess = true
+                            useWideViewPort = true
+                            loadWithOverviewMode = true
+                            userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                        }
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                val u = request?.url?.toString().orEmpty()
+                                if (u.contains("bacakomik") || u.contains(".lol") || u.contains(".lat") || u.contains(".pics") || u.contains("wp.com")) {
+                                    return false
+                                }
+                                return true
+                            }
+                        }
+                    }
+                },
+                update = { wv ->
+                    val target = if (currentChapterId.startsWith("http")) currentChapterId else "https://bacakomik.my/$currentChapterId"
+                    if (wv.url != target) {
+                        wv.loadUrl(target)
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = if (showControls) 56.dp else 0.dp)
+            )
+        } else if (isLoading) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -204,26 +250,40 @@ fun MangaReaderScreen(
                         fontSize = 12.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color.White)
-                            .clickable {
-                                coroutineScope.launch {
-                                    isLoading = true
-                                    try {
-                                        pages = repository.getMangaPages(currentChapterId)
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    } finally {
-                                        isLoading = false
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color.White)
+                                .clickable {
+                                    coroutineScope.launch {
+                                        isLoading = true
+                                        try {
+                                            pages = repository.getMangaPages(currentChapterId)
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        } finally {
+                                            isLoading = false
+                                        }
                                     }
                                 }
-                            }
-                            .padding(horizontal = 20.dp, vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Muat Ulang", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Muat Ulang", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(AccentCyan)
+                                .clickable { useWebReader = true }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🌐 Mode Web", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -415,111 +475,134 @@ fun MangaReaderScreen(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Offline Download Action Button
-                if (isDownloading) {
-                    Row(
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Reader Mode Switcher Toggle Button (⚡ Native vs 🌐 Web)
+                    Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(100.dp))
-                            .background(SurfaceElevated)
+                            .background(if (useWebReader) AccentCyan.copy(alpha = 0.85f) else Color(0x33FFFFFF))
                             .border(1.dp, GlassBorder, RoundedCornerShape(100.dp))
+                            .clickable { useWebReader = !useWebReader }
                             .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(
+                        Text(
+                            text = if (useWebReader) "🌐 Web" else "⚡ Native",
                             color = Color.White,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = if (downloadProgress.isNotEmpty()) downloadProgress else "Unduh...",
-                            color = TextPrimary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
-                } else if (isDownloaded) {
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(100.dp))
-                            .background(Color(0x2210B981))
-                            .border(1.dp, Color(0xFF10B981), RoundedCornerShape(100.dp))
-                            .clickable {
-                                val deleted = NanzStreamApp.offlineManga.deleteOfflineChapter(currentChapterId)
-                                if (deleted) {
-                                    isDownloaded = false
-                                    Toast.makeText(context, "Dihapus dari penyimpanan offline", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Tersedia Offline",
-                            tint = Color(0xFF10B981),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = "Offline ✓",
-                            color = Color(0xFF10B981),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(100.dp))
-                            .background(Color.White)
-                            .clickable(enabled = pages.isNotEmpty()) {
-                                coroutineScope.launch {
-                                    isDownloading = true
-                                    downloadProgress = "0%"
-                                    val success = NanzStreamApp.offlineManga.downloadChapter(
-                                        mangaId = mangaId,
-                                        mangaTitle = "Komik",
-                                        chapterId = currentChapterId,
-                                        chapterTitle = activeChapterTitle,
-                                        thumbnail = pages.firstOrNull()?.url ?: "",
-                                        pages = pages
-                                    ) { downloaded, total ->
-                                        downloadProgress = "$downloaded/$total"
-                                    }
-                                    isDownloading = false
-                                    if (success) {
-                                        isDownloaded = true
-                                        Toast.makeText(
-                                            context,
-                                            "Chapter berhasil disimpan ke offline! ($downloadProgress halaman)",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    } else {
-                                        Toast.makeText(
-                                            context,
-                                            "Gagal menyimpan ke offline. Periksa koneksi internet.",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+
+                    // Offline Download Action Button
+                    if (isDownloading) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(100.dp))
+                                .background(SurfaceElevated)
+                                .border(1.dp, GlassBorder, RoundedCornerShape(100.dp))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = if (downloadProgress.isNotEmpty()) downloadProgress else "Unduh...",
+                                color = TextPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else if (isDownloaded) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(100.dp))
+                                .background(Color(0x2210B981))
+                                .border(1.dp, Color(0xFF10B981), RoundedCornerShape(100.dp))
+                                .clickable {
+                                    val deleted = NanzStreamApp.offlineManga.deleteOfflineChapter(currentChapterId)
+                                    if (deleted) {
+                                        isDownloaded = false
+                                        Toast.makeText(context, "Dihapus dari penyimpanan offline", Toast.LENGTH_SHORT).show()
                                     }
                                 }
-                            }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Tambahkan ke Offline",
-                            tint = CanvasBlack,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = "Tambahkan ke Offline",
-                            color = CanvasBlack,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Tersedia Offline",
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Offline ✓",
+                                color = Color(0xFF10B981),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(100.dp))
+                                .background(Color.White)
+                                .clickable(enabled = pages.isNotEmpty()) {
+                                    coroutineScope.launch {
+                                        isDownloading = true
+                                        downloadProgress = "0%"
+                                        val success = NanzStreamApp.offlineManga.downloadChapter(
+                                            mangaId = mangaId,
+                                            mangaTitle = "Komik",
+                                            chapterId = currentChapterId,
+                                            chapterTitle = activeChapterTitle,
+                                            thumbnail = pages.firstOrNull()?.url ?: "",
+                                            pages = pages
+                                        ) { downloaded, total ->
+                                            downloadProgress = "$downloaded/$total"
+                                        }
+                                        isDownloading = false
+                                        if (success) {
+                                            isDownloaded = true
+                                            Toast.makeText(
+                                                context,
+                                                "Chapter berhasil disimpan ke offline! ($downloadProgress halaman)",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "Gagal menyimpan ke offline. Periksa koneksi internet.",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Tambahkan ke Offline",
+                                tint = CanvasBlack,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Tambahkan ke Offline",
+                                color = CanvasBlack,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
                     }
                 }
             }
@@ -685,6 +768,8 @@ fun MangaPageView(page: MangaPageItem) {
                         .addHeader("Referer", referer)
                         .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
                         .crossfade(true)
+                        .bitmapConfig(Bitmap.Config.RGB_565)
+                        .allowHardware(false)
                         .build()
                 }
             }

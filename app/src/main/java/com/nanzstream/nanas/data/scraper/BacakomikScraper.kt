@@ -329,7 +329,10 @@ object BacakomikScraper {
             doc.selectFirst("#anjay_ini_id_kh"),
             doc.selectFirst("#readerarea"),
             doc.selectFirst(".oi_ada_class_skrng"),
-            doc.selectFirst(".entry-content")
+            doc.selectFirst(".entry-content"),
+            doc.selectFirst(".main-reading-area"),
+            doc.selectFirst("#chapter-images"),
+            doc.selectFirst(".chapter-content")
         )
 
         for (container in containers) {
@@ -342,12 +345,25 @@ object BacakomikScraper {
             if (pages.isNotEmpty()) break
         }
 
-        // Fallback: search all img tags in document if container was missing
+        // Fallback 1: search all img tags in document if container was missing
         if (pages.isEmpty()) {
             doc.select("img").forEach { img ->
                 val src = extractCandidate(img)
                 if (src.isNotBlank() && !pages.contains(src)) {
                     pages.add(src)
+                }
+            }
+        }
+
+        // Fallback 2: Regex extraction from raw HTML (for obfuscated script tags, ts_reader, or dynamic layouts)
+        if (pages.isEmpty()) {
+            val imgRegex = Regex("""https?://[^\s"'<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"'<>]*)?""", RegexOption.IGNORE_CASE)
+            imgRegex.findAll(html).forEach { match ->
+                val u = match.value
+                val isChapterData = u.contains("/data/") || u.contains("/media/") || u.contains(".lol") || u.contains(".lat") || u.contains(".pics")
+                val isIgnored = u.contains("banner") || u.contains("logo") || u.contains("ikon") || u.contains("resize=") || u.contains("avatar")
+                if (isChapterData && !isIgnored && !pages.contains(u)) {
+                    pages.add(u)
                 }
             }
         }
