@@ -1,6 +1,12 @@
 package com.nanzstream.nanas.ui.screens
 
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import android.view.ViewGroup
+import android.webkit.JavascriptInterface
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -32,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.nanzstream.nanas.NanzStreamApp
 import com.nanzstream.nanas.crypto.MangaDecryptor
 import com.nanzstream.nanas.crypto.WebtoonBitmapDecoder
@@ -42,6 +49,7 @@ import com.nanzstream.nanas.data.model.MangaPageItem
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.ui.theme.*
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import java.io.File
 
 @Composable
@@ -69,6 +77,15 @@ fun MangaReaderScreen(
     }
     var isDownloading by remember { mutableStateOf(false) }
     var downloadProgress by remember { mutableStateOf("") }
+
+    var useIframeReader by remember { mutableStateOf(!isDownloaded) }
+    var iframeCurrentPage by remember { mutableIntStateOf(1) }
+
+    LaunchedEffect(isDownloaded) {
+        if (isDownloaded) {
+            useIframeReader = false
+        }
+    }
 
     // Fetch chapters list for previous/next chapter navigation
     LaunchedEffect(mangaId, currentChapterId) {
@@ -169,7 +186,7 @@ fun MangaReaderScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable { showControls = !showControls }
+            .clickable(enabled = !useIframeReader || isDownloaded) { showControls = !showControls }
     ) {
         if (isLoading) {
             Box(
@@ -178,7 +195,7 @@ fun MangaReaderScreen(
             ) {
                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
             }
-        } else if (pages.isEmpty()) {
+        } else if (pages.isEmpty() && (!useIframeReader || isDownloaded)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -225,6 +242,37 @@ fun MangaReaderScreen(
                     }
                 }
             }
+        } else if (useIframeReader && !isDownloaded) {
+            WebtoonHtmlReaderView(
+                chapterUrl = currentChapterId,
+                chapterTitle = activeChapterTitle,
+                pages = pages,
+                prevChapter = prevChapter,
+                nextChapter = nextChapter,
+                onPrevClick = {
+                    prevChapter?.let {
+                        currentChapterId = it.id
+                        activeChapterTitle = it.title
+                    }
+                },
+                onNextClick = {
+                    nextChapter?.let {
+                        currentChapterId = it.id
+                        activeChapterTitle = it.title
+                    }
+                },
+                onBackClick = onBackClick,
+                onToggleControls = { showControls = !showControls },
+                onPagesDetected = { detectedPages ->
+                    if (pages.isEmpty() && detectedPages.isNotEmpty()) {
+                        pages = detectedPages
+                    }
+                },
+                onPageVisible = { pageNum ->
+                    iframeCurrentPage = pageNum
+                },
+                modifier = Modifier.fillMaxSize()
+            )
         } else {
             // Continuous Vertical Scroll
             LazyColumn(
@@ -403,10 +451,18 @@ fun MangaReaderScreen(
                             maxLines = 1
                         )
                         Text(
-                            text = if (isDownloaded) "${pages.size} Halaman • Mode Offline" else "${pages.size} Halaman • Mode Vertikal",
-                            color = if (isDownloaded) Color(0xFF10B981) else TextMuted,
+                            text = when {
+                                isDownloaded -> "${pages.size} Halaman • Mode Offline"
+                                useIframeReader -> "${pages.size} Halaman • Tampil Iframe ⚡"
+                                else -> "${pages.size} Halaman • Mode Native"
+                            },
+                            color = when {
+                                isDownloaded -> Color(0xFF10B981)
+                                useIframeReader -> Color(0xFF60A5FA)
+                                else -> TextMuted
+                            },
                             fontSize = 11.sp,
-                            fontWeight = if (isDownloaded) FontWeight.Bold else FontWeight.Normal
+                            fontWeight = if (isDownloaded || useIframeReader) FontWeight.Bold else FontWeight.Normal
                         )
                     }
                 }
@@ -417,6 +473,37 @@ fun MangaReaderScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Mode Switcher Toggle: Iframe vs Native
+                    if (!isDownloaded) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(100.dp))
+                                .border(
+                                    1.dp,
+                                    if (useIframeReader) Color(0xFF60A5FA) else GlassBorder,
+                                    RoundedCornerShape(100.dp)
+                                )
+                                .background(if (useIframeReader) Color(0x333B82F6) else SurfaceElevated)
+                                .clickable {
+                                    useIframeReader = !useIframeReader
+                                    Toast.makeText(
+                                        context,
+                                        if (useIframeReader) "Beralih ke Tampil Iframe (Cepat & Anti Error)" else "Beralih ke Mode Native",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                                .padding(horizontal = 9.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (useIframeReader) "⚡ Iframe" else "📱 Native",
+                                color = if (useIframeReader) Color.White else TextMuted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
                     // Offline Download Action Button
                     if (isDownloading) {
                         Row(
@@ -590,8 +677,9 @@ fun MangaReaderScreen(
                         fontWeight = FontWeight.Bold,
                         maxLines = 1
                     )
+                    val displayPageNumber = if (useIframeReader && !isDownloaded) iframeCurrentPage else currentPageNumber
                     Text(
-                        text = if (pages.isNotEmpty()) "Halaman $currentPageNumber dari ${pages.size}" else "Memuat...",
+                        text = if (pages.isNotEmpty()) "Halaman $displayPageNumber dari ${pages.size}" else "Memuat...",
                         color = TextMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
@@ -739,4 +827,398 @@ fun MangaPageView(page: MangaPageItem) {
             }
         }
     }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun WebtoonHtmlReaderView(
+    chapterUrl: String,
+    chapterTitle: String,
+    pages: List<MangaPageItem>,
+    prevChapter: MangaChapterItem?,
+    nextChapter: MangaChapterItem?,
+    onPrevClick: () -> Unit,
+    onNextClick: () -> Unit,
+    onBackClick: () -> Unit,
+    onToggleControls: () -> Unit,
+    onPagesDetected: (List<MangaPageItem>) -> Unit,
+    onPageVisible: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var lastLoadedKey by remember { mutableStateOf("") }
+
+    AndroidView(
+        modifier = modifier.fillMaxSize(),
+        factory = { ctx ->
+            WebView(ctx).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                setBackgroundColor(android.graphics.Color.BLACK)
+                isVerticalScrollBarEnabled = true
+                isHorizontalScrollBarEnabled = false
+
+                settings.apply {
+                    javaScriptEnabled = true
+                    domStorageEnabled = true
+                    databaseEnabled = true
+                    loadWithOverviewMode = true
+                    useWideViewPort = true
+                    builtInZoomControls = true
+                    displayZoomControls = false
+                    setSupportZoom(true)
+                    cacheMode = WebSettings.LOAD_DEFAULT
+                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                }
+
+                addJavascriptInterface(object {
+                    @JavascriptInterface
+                    fun toggleControls() {
+                        post { onToggleControls() }
+                    }
+
+                    @JavascriptInterface
+                    fun prevChapter() {
+                        post { onPrevClick() }
+                    }
+
+                    @JavascriptInterface
+                    fun nextChapter() {
+                        post { onNextClick() }
+                    }
+
+                    @JavascriptInterface
+                    fun backToList() {
+                        post { onBackClick() }
+                    }
+
+                    @JavascriptInterface
+                    fun reportPage(pageNum: Int) {
+                        post { onPageVisible(pageNum) }
+                    }
+
+                    @JavascriptInterface
+                    fun onImagesFound(jsonArrayStr: String) {
+                        try {
+                            val jsonArray = JSONArray(jsonArrayStr)
+                            val list = mutableListOf<MangaPageItem>()
+                            for (i in 0 until jsonArray.length()) {
+                                val u = jsonArray.optString(i)
+                                if (u.isNotBlank()) {
+                                    list.add(MangaPageItem(page = i + 1, url = u))
+                                }
+                            }
+                            if (list.isNotEmpty()) {
+                                post { onPagesDetected(list) }
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }, "AndroidBridge")
+
+                webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                        return true
+                    }
+
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        super.onPageFinished(view, url)
+                        val jsClean = """
+                            (function() {
+                                var s = document.createElement('style');
+                                s.innerHTML = `
+                                    header, footer, nav, .header, .footer, .sidebar, #sidebar, .comments, #comments, .announcement, .iklan, .ads, [class*="ads"], [id*="ads"], .nav_ch, .bcrumb, .entry-header {
+                                        display: none !important;
+                                    }
+                                    html, body {
+                                        background-color: #000000 !important;
+                                        color: #FFFFFF !important;
+                                        margin: 0 !important;
+                                        padding: 56px 0 90px 0 !important;
+                                    }
+                                    #chimg-auh, #readerarea, .chapter-content, .chapter-area {
+                                        display: block !important;
+                                        width: 100% !important;
+                                        margin: 0 !important;
+                                        padding: 0 !important;
+                                    }
+                                    #chimg-auh img, #readerarea img, .chapter-content img, .chapter-area img {
+                                        display: block !important;
+                                        width: 100% !important;
+                                        height: auto !important;
+                                        margin: 0 !important;
+                                        padding: 0 !important;
+                                        background: #000000 !important;
+                                    }
+                                `;
+                                document.head.appendChild(s);
+
+                                var imgs = document.querySelectorAll('#chimg-auh img, #readerarea img, .chapter-content img, .chapter-area img');
+                                var found = [];
+                                imgs.forEach(function(img) {
+                                    var src = img.getAttribute('data-lazy-src') || img.getAttribute('data-src') || img.getAttribute('src');
+                                    if (src && src.startsWith('http') && !src.includes('data:image') && !src.includes('blank.gif') && !found.includes(src)) {
+                                        found.push(src);
+                                    }
+                                });
+                                if (found.length > 0 && window.AndroidBridge && window.AndroidBridge.onImagesFound) {
+                                    window.AndroidBridge.onImagesFound(JSON.stringify(found));
+                                }
+                            })();
+                        """.trimIndent()
+                        view?.evaluateJavascript(jsClean, null)
+                    }
+                }
+            }
+        },
+        update = { webView ->
+            val currentKey = "$chapterUrl:${pages.size}"
+            if (lastLoadedKey != currentKey) {
+                lastLoadedKey = currentKey
+                if (pages.isNotEmpty()) {
+                    val html = buildMangaHtml(
+                        title = chapterTitle,
+                        pages = pages,
+                        hasPrev = prevChapter != null,
+                        hasNext = nextChapter != null
+                    )
+                    webView.loadDataWithBaseURL("https://bacakomik.my/", html, "text/html", "UTF-8", null)
+                } else if (chapterUrl.isNotBlank()) {
+                    val headers = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+                        "Referer" to "https://bacakomik.my/"
+                    )
+                    webView.loadUrl(chapterUrl, headers)
+                }
+            }
+        }
+    )
+}
+
+fun buildMangaHtml(
+    title: String,
+    pages: List<MangaPageItem>,
+    hasPrev: Boolean,
+    hasNext: Boolean
+): String {
+    val imgTags = StringBuilder()
+    pages.forEachIndexed { index, page ->
+        val loadingAttr = if (index < 3) "loading=\"eager\"" else "loading=\"lazy\""
+        imgTags.append(
+            """
+            <div class="page-container" data-page="${page.page}">
+                <img src="${page.url}" 
+                     $loadingAttr 
+                     decoding="async" 
+                     alt="Halaman ${page.page}"
+                     onerror="if(!this.dataset.retried){this.dataset.retried='1';this.src='${page.url}';}" />
+                <div class="page-badge">${page.page} / ${pages.size}</div>
+            </div>
+            """.trimIndent()
+        ).append("\n")
+    }
+
+    val prevBtn = if (hasPrev) {
+        """<button class="btn btn-prev" onclick="AndroidBridge.prevChapter()">◀ Sebelumnya</button>"""
+    } else {
+        """<button class="btn btn-prev disabled" disabled>◀ Sebelumnya</button>"""
+    }
+
+    val nextBtn = if (hasNext) {
+        """<button class="btn btn-next" onclick="AndroidBridge.nextChapter()">Selanjutnya ▶</button>"""
+    } else {
+        """<button class="btn btn-next disabled" disabled>Selanjutnya ▶</button>"""
+    }
+
+    return """
+        <!DOCTYPE html>
+        <html lang="id">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+            <style>
+                * {
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                    -webkit-tap-highlight-color: transparent;
+                }
+                html, body {
+                    background-color: #000000;
+                    color: #FFFFFF;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    width: 100%;
+                    min-height: 100%;
+                    overflow-x: hidden;
+                }
+                .reader-content {
+                    width: 100%;
+                    max-width: 900px;
+                    margin: 0 auto;
+                    padding-top: 56px;
+                    padding-bottom: 90px;
+                    background-color: #000000;
+                }
+                .page-container {
+                    position: relative;
+                    width: 100%;
+                    margin: 0;
+                    padding: 0;
+                    background-color: #000000;
+                    line-height: 0;
+                }
+                .page-container img {
+                    display: block;
+                    width: 100%;
+                    height: auto;
+                    margin: 0;
+                    padding: 0;
+                    border: none;
+                    background-color: #000000;
+                    vertical-align: bottom;
+                }
+                .page-badge {
+                    position: absolute;
+                    bottom: 8px;
+                    right: 10px;
+                    background: rgba(0, 0, 0, 0.65);
+                    color: rgba(255, 255, 255, 0.75);
+                    font-size: 11px;
+                    font-weight: 700;
+                    padding: 3px 8px;
+                    border-radius: 6px;
+                    backdrop-filter: blur(4px);
+                    pointer-events: none;
+                    line-height: 1.2;
+                }
+                .chapter-end-card {
+                    padding: 40px 20px 60px 20px;
+                    text-align: center;
+                    background: #090A0E;
+                    border-top: 1px solid rgba(255, 255, 255, 0.1);
+                    margin-top: 24px;
+                }
+                .end-title {
+                    font-size: 16px;
+                    font-weight: 700;
+                    margin-bottom: 4px;
+                }
+                .end-desc {
+                    font-size: 12px;
+                    color: rgba(255, 255, 255, 0.5);
+                    margin-bottom: 24px;
+                }
+                .btn-row {
+                    display: flex;
+                    gap: 12px;
+                    justify-content: center;
+                    max-width: 420px;
+                    margin: 0 auto 16px auto;
+                }
+                .btn {
+                    flex: 1;
+                    height: 46px;
+                    border-radius: 12px;
+                    font-size: 13px;
+                    font-weight: 700;
+                    border: none;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: opacity 0.2s;
+                }
+                .btn-prev {
+                    background: #181920;
+                    color: #FFFFFF;
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                }
+                .btn-next {
+                    background: #FFFFFF;
+                    color: #000000;
+                }
+                .btn.disabled {
+                    opacity: 0.3;
+                    cursor: not-allowed;
+                }
+                .btn-back {
+                    display: inline-block;
+                    margin-top: 10px;
+                    padding: 10px 20px;
+                    background: rgba(255, 255, 255, 0.08);
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                    border-radius: 10px;
+                    color: rgba(255, 255, 255, 0.7);
+                    font-size: 12px;
+                    font-weight: 600;
+                    cursor: pointer;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="reader-content">
+                $imgTags
+                <div class="chapter-end-card">
+                    <div class="end-title">Akhir dari $title</div>
+                    <div class="end-desc">Selesai membaca seluruh ${pages.size} halaman</div>
+                    <div class="btn-row">
+                        $prevBtn
+                        $nextBtn
+                    </div>
+                    <div class="btn-back" onclick="AndroidBridge.backToList()">Kembali ke Daftar Chapter</div>
+                </div>
+            </div>
+            <script>
+                // Track visible page with IntersectionObserver
+                if ('IntersectionObserver' in window) {
+                    const observer = new IntersectionObserver((entries) => {
+                        entries.forEach(entry => {
+                            if (entry.isIntersecting) {
+                                const p = entry.target.getAttribute('data-page');
+                                if (p && window.AndroidBridge && window.AndroidBridge.reportPage) {
+                                    window.AndroidBridge.reportPage(parseInt(p, 10));
+                                }
+                            }
+                        });
+                    }, { threshold: 0.35 });
+
+                    document.querySelectorAll('.page-container').forEach(el => observer.observe(el));
+                }
+
+                // Smooth tap handling (distinguish between scroll/pan and tap)
+                let touchStartX = 0;
+                let touchStartY = 0;
+                let touchStartTime = 0;
+
+                document.addEventListener('touchstart', function(e) {
+                    if (e.touches.length === 1) {
+                        touchStartX = e.touches[0].clientX;
+                        touchStartY = e.touches[0].clientY;
+                        touchStartTime = Date.now();
+                    }
+                }, { passive: true });
+
+                document.addEventListener('touchend', function(e) {
+                    if (e.changedTouches.length === 1) {
+                        let dx = Math.abs(e.changedTouches[0].clientX - touchStartX);
+                        let dy = Math.abs(e.changedTouches[0].clientY - touchStartY);
+                        let dt = Date.now() - touchStartTime;
+                        if (dx < 14 && dy < 14 && dt < 350) {
+                            let target = e.target;
+                            if (target && (target.tagName.toLowerCase() === 'button' || target.closest('button') || target.classList.contains('btn-back'))) {
+                                return;
+                            }
+                            if (window.AndroidBridge && window.AndroidBridge.toggleControls) {
+                                window.AndroidBridge.toggleControls();
+                            }
+                        }
+                    }
+                }, { passive: true });
+            </script>
+        </body>
+        </html>
+    """.trimIndent()
 }
