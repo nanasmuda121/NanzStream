@@ -34,6 +34,18 @@ object ApiClient {
         // MUST hit origin nginx IPs directly - Cloudflare returns 404!
         private val vidhideOriginIps = listOf("203.188.166.60", "203.188.166.71", "203.188.166.68")
 
+        // Cloudflare Anycast edge IPs used as emergency fallback for any Cloudflare-proxied sites
+        private val cloudflareEdgeIps = listOf(
+            "104.21.32.127",
+            "172.67.151.249",
+            "104.21.10.207",
+            "172.67.190.254",
+            "104.21.50.252",
+            "172.67.215.119",
+            "104.21.8.11",
+            "172.67.156.156"
+        )
+
         private fun createAddress(hostname: String, ip: String): InetAddress? {
             return try {
                 val parts = ip.split('.').map { it.toInt().toByte() }.toByteArray()
@@ -92,7 +104,33 @@ object ApiClient {
                 }
             }
 
-            // 2. Try System DNS (filter out Indonesian telco block/landing page IPs)
+            // 2. Comic & CDN domains that are routinely blocked by Indonesian ISPs:
+            // Query direct-IP DoH first to bypass ISP DNS poisoning entirely.
+            val isComicOrCdn = cleanHost.contains("bacakomik") ||
+                    cleanHost.endsWith(".lol") ||
+                    cleanHost.endsWith(".lat") ||
+                    cleanHost.endsWith(".pics") ||
+                    cleanHost.contains("imageai") ||
+                    cleanHost.contains("himmga") ||
+                    cleanHost.contains("gaimgame") ||
+                    cleanHost.contains("amatipolanya") ||
+                    cleanHost.contains("bukansiapasiapa")
+
+            if (isComicOrCdn) {
+                val dohAddrs = resolveDoH(cleanHost)
+                if (dohAddrs.isNotEmpty()) {
+                    cache[cleanHost] = dohAddrs
+                    return dohAddrs
+                }
+                // Fallback to Cloudflare Anycast edge pool
+                val cfAddrs = cloudflareEdgeIps.mapNotNull { createAddress(cleanHost, it) }
+                if (cfAddrs.isNotEmpty()) {
+                    cache[cleanHost] = cfAddrs
+                    return cfAddrs
+                }
+            }
+
+            // 3. Normal domains: Try System DNS, filter out telco landing page IPs
             try {
                 val systemAddrs = Dns.SYSTEM.lookup(hostname)
                 val validAddrs = systemAddrs.filter { !isBlockedIp(it.hostAddress ?: "") }
@@ -103,11 +141,10 @@ object ApiClient {
                     return candidates
                 }
             } catch (e: Exception) {
-                // System DNS failed or poisoned by ISP
+                // System DNS failed
             }
 
-            // 3. Dynamic DoH fallback (Google 8.8.8.8, Cloudflare 1.1.1.1 & 1.0.0.1)
-            // Dynamically queries real-time IPs, preventing failure when Anycast IPs rotate
+            // 4. DoH fallback for other domains
             try {
                 val dohAddrs = resolveDoH(cleanHost)
                 if (dohAddrs.isNotEmpty()) {
@@ -123,18 +160,20 @@ object ApiClient {
         }
 
         private fun resolveDoH(hostname: String): List<InetAddress> {
+            // Direct IP DoH endpoints - NO domain lookup required to reach them
             val dohUrls = listOf(
-                "https://dns.google/resolve?name=$hostname&type=A",
-                "https://1.1.1.1/dns-query?name=$hostname&type=A"
+                "https://8.8.8.8/resolve?name=$hostname&type=A",
+                "https://8.8.4.4/resolve?name=$hostname&type=A",
+                "https://1.0.0.1/dns-query?name=$hostname&type=A"
             )
             for (endpoint in dohUrls) {
                 try {
                     val url = URL(endpoint)
                     val conn = (url.openConnection() as HttpURLConnection).apply {
-                        connectTimeout = 1200
-                        readTimeout = 1200
+                        connectTimeout = 3000
+                        readTimeout = 3000
                         setRequestProperty("Accept", "application/dns-json")
-                        setRequestProperty("User-Agent", "Mozilla/5.0")
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                     }
                     val text = conn.inputStream.bufferedReader().use { it.readText() }
                     conn.disconnect()

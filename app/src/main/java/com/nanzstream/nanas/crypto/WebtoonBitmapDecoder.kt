@@ -25,6 +25,7 @@ object WebtoonBitmapDecoder {
     private const val MAX_SLICE_HEIGHT = 2048
 
     private val directImageClient: OkHttpClient = OkHttpClient.Builder()
+        .dns(ApiClient.resilientDns)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS)
         .followRedirects(true)

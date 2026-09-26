@@ -22,6 +22,7 @@ object BacakomikScraper {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     private val directClient: OkHttpClient = OkHttpClient.Builder()
+        .dns(ApiClient.resilientDns)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .followRedirects(true)
@@ -365,7 +366,9 @@ object BacakomikScraper {
         for (img in userImgs) {
             val src = img.attr("data-lazy-src").ifEmpty {
                 img.attr("data-src").ifEmpty {
-                    img.attr("src")
+                    Regex("""src=['"]([^'"]+)['"]""").find(img.attr("onerror") + " " + img.attr("onError"))?.groupValues?.get(1).orEmpty().ifEmpty {
+                        img.attr("src")
+                    }
                 }
             }.trim()
 

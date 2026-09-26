@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -46,9 +48,11 @@ import com.nanzstream.nanas.data.model.CategoryType
 import com.nanzstream.nanas.data.model.ContinueWatchingItem
 import com.nanzstream.nanas.data.model.MangaChapterItem
 import com.nanzstream.nanas.data.model.MangaPageItem
+import com.nanzstream.nanas.data.remote.ApiClient
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.ui.theme.*
 import kotlinx.coroutines.launch
+import okhttp3.Request
 import org.json.JSONArray
 import java.io.File
 
@@ -920,8 +924,72 @@ fun WebtoonHtmlReaderView(
                 }, "AndroidBridge")
 
                 webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                        return true
+                    }
+
+                    @Deprecated("Deprecated in Java")
                     override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                         return true
+                    }
+
+                    override fun shouldInterceptRequest(
+                        view: WebView?,
+                        request: WebResourceRequest?
+                    ): WebResourceResponse? {
+                        val reqUrl = request?.url?.toString().orEmpty()
+                        val isImage = reqUrl.endsWith(".webp", ignoreCase = true) ||
+                                reqUrl.endsWith(".jpg", ignoreCase = true) ||
+                                reqUrl.endsWith(".jpeg", ignoreCase = true) ||
+                                reqUrl.endsWith(".png", ignoreCase = true) ||
+                                reqUrl.contains("/media/", ignoreCase = true) ||
+                                reqUrl.contains("/data/", ignoreCase = true) ||
+                                reqUrl.contains(".lol", ignoreCase = true) ||
+                                reqUrl.contains(".lat", ignoreCase = true) ||
+                                reqUrl.contains(".pics", ignoreCase = true)
+
+                        if (isImage && (reqUrl.startsWith("http://") || reqUrl.startsWith("https://"))) {
+                            try {
+                                val referer = when {
+                                    reqUrl.contains("animasu") -> "https://animasu.love/"
+                                    else -> "https://bacakomik.my/"
+                                }
+                                val okReq = Request.Builder()
+                                    .url(reqUrl)
+                                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                                    .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                                    .header("Referer", referer)
+                                    .header("sec-fetch-dest", "image")
+                                    .header("sec-fetch-mode", "no-cors")
+                                    .header("sec-fetch-site", "cross-site")
+                                    .build()
+
+                                val resp = ApiClient.okHttpClient.newCall(okReq).execute()
+                                if (resp.isSuccessful && resp.body != null) {
+                                    val body = resp.body!!
+                                    val mimeType = when {
+                                        reqUrl.contains(".webp", ignoreCase = true) -> "image/webp"
+                                        reqUrl.contains(".png", ignoreCase = true) -> "image/png"
+                                        else -> "image/jpeg"
+                                    }
+                                    val responseHeaders = mutableMapOf(
+                                        "Access-Control-Allow-Origin" to "*",
+                                        "Cache-Control" to "public, max-age=31536000"
+                                    )
+                                    return WebResourceResponse(
+                                        mimeType,
+                                        null,
+                                        200,
+                                        "OK",
+                                        responseHeaders,
+                                        body.byteStream()
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                        return super.shouldInterceptRequest(view, request)
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {
