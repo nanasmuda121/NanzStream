@@ -23,42 +23,16 @@ object ApiClient {
     /**
      * Resilient Anti-Blocking DNS:
      * 1. In-memory cache for 0ms repeated lookups.
-     * 2. System DNS with IPv4 priority, filtering out Indonesian ISP block IPs (Internet Positif / Uzone).
-     * 3. Automatic DoH fallback (Cloudflare 1.1.1.1 / Google 8.8.8.8) when System DNS is poisoned or fails.
-     * 4. Hardcoded static IPs for primary media scrapers as guaranteed safety net.
+     * 2. Direct origin routing for Vidhide CDN nginx servers (preventing Cloudflare 404).
+     * 3. System DNS with IPv4 priority, filtering out Indonesian ISP block IPs (Internet Positif / Uzone).
+     * 4. Pure Dynamic DoH (DNS-over-HTTPS via Google 8.8.8.8, Cloudflare 1.1.1.1 & 1.0.0.1) - NO hardcoded Anycast IPs.
      */
     val resilientDns = object : Dns {
         private val cache = ConcurrentHashMap<String, List<InetAddress>>()
 
-        private val staticFallbacks = mapOf(
-            "animasu.love" to listOf("104.21.83.63", "172.67.214.247", "104.21.76.66", "172.67.190.239"),
-            "www.animasu.love" to listOf("104.21.83.63", "172.67.214.247", "104.21.76.66", "172.67.190.239"),
-            "bacakomik.my" to listOf("104.21.32.127", "172.67.151.249", "104.21.76.66", "172.67.190.239"),
-            "www.bacakomik.my" to listOf("104.21.32.127", "172.67.151.249", "104.21.76.66", "172.67.190.239"),
-            "vidhidepro.com" to listOf("104.21.57.125", "172.67.163.224", "104.21.76.66"),
-            "vidhide.com" to listOf("104.21.57.125", "172.67.163.224", "104.21.76.66"),
-            "odvidhide.com" to listOf("104.21.57.125", "172.67.163.224"),
-            "dramiyos-cdn.com" to listOf("203.188.166.60", "203.188.166.71", "203.188.166.68"),
-            "acek-cdn.com" to listOf("203.188.166.71", "203.188.166.60", "203.188.166.68"),
-            "amatipolanyatirudesainnya.lol" to listOf("104.21.8.11", "172.67.156.156", "104.21.76.66"),
-            "bukansiapasiapa.lol" to listOf("104.21.69.230", "172.67.215.109", "104.21.76.66"),
-            "imageainewgeneration.lol" to listOf("104.21.10.207", "172.67.190.254", "104.21.76.66"),
-            "himmga.lat" to listOf("104.21.50.252", "172.67.215.119", "104.21.76.66"),
-            "gaimgame.pics" to listOf("104.21.30.204", "172.67.173.220", "104.21.76.66"),
-            "samehadaku.li" to listOf("104.21.76.66", "172.67.190.239", "104.21.83.37", "172.67.211.38"),
-            "www.samehadaku.li" to listOf("104.21.76.66", "172.67.190.239", "104.21.83.37", "172.67.211.38"),
-            "anichin.ro" to listOf("104.21.76.66", "172.67.190.239"),
-            "www.anichin.ro" to listOf("104.21.76.66", "172.67.190.239"),
-            "anichin.site" to listOf("104.21.76.66", "172.67.190.239", "104.21.13.75"),
-            "dracinema.com" to listOf("104.21.76.66", "172.67.190.239", "172.67.194.112"),
-            "themoviebox.online" to listOf("103.224.182.189"),
-            "player.abyssplayer.com" to listOf("172.67.178.198", "104.21.56.60"),
-            "dl.berkasdrive.com" to listOf("172.67.175.145", "104.21.83.118"),
-            "i0.wp.com" to listOf("192.0.77.2"),
-            "i1.wp.com" to listOf("192.0.77.2"),
-            "i2.wp.com" to listOf("192.0.77.2"),
-            "i3.wp.com" to listOf("192.0.77.2")
-        )
+        // Vidhide CDN origin nginx servers (*.dramiyos-cdn.com, *.acek-cdn.com, etc.)
+        // MUST hit origin nginx IPs directly - Cloudflare returns 404!
+        private val vidhideOriginIps = listOf("203.188.166.60", "203.188.166.71", "203.188.166.68")
 
         private fun createAddress(hostname: String, ip: String): InetAddress? {
             return try {
@@ -110,32 +84,8 @@ object ApiClient {
             cache[cleanHost]?.let { return it }
 
             // 1. Vidhide CDN direct origin routing (*.dramiyos-cdn.com, *.acek-cdn.com, etc.)
-            // MUST hit origin nginx IPs (203.188.166.60 / .71 / .68) directly - Cloudflare returns 404!
             if (cleanHost.endsWith("-cdn.com") || cleanHost.contains("dramiyos") || cleanHost.contains("acek-cdn")) {
-                val cdnIps = listOf("203.188.166.60", "203.188.166.71", "203.188.166.68")
-                val addrs = cdnIps.mapNotNull { createAddress(cleanHost, it) }
-                if (addrs.isNotEmpty()) {
-                    cache[cleanHost] = addrs
-                    return addrs
-                }
-            }
-
-            // 2. Instant Static Fallbacks (0ms lookup, guaranteed anti-blocking for media & CDN domains)
-            val matchedIps = staticFallbacks[cleanHost]
-                ?: staticFallbacks.entries.firstOrNull { cleanHost == it.key || cleanHost.endsWith("." + it.key) }?.value
-
-            if (!matchedIps.isNullOrEmpty()) {
-                val staticAddrs = matchedIps.mapNotNull { createAddress(cleanHost, it) }
-                if (staticAddrs.isNotEmpty()) {
-                    cache[cleanHost] = staticAddrs
-                    return staticAddrs
-                }
-            }
-
-            // 3. Generic Cloudflare edge IPs fallback for image hosts (*.lol, *.lat, *.pics)
-            if (cleanHost.endsWith(".lol") || cleanHost.endsWith(".lat") || cleanHost.endsWith(".pics")) {
-                val cfIps = listOf("104.21.10.207", "172.67.190.254", "104.21.50.252", "172.67.215.119", "104.21.30.204", "172.67.173.220", "104.21.76.66", "172.67.190.239")
-                val addrs = cfIps.mapNotNull { createAddress(cleanHost, it) }
+                val addrs = vidhideOriginIps.mapNotNull { createAddress(cleanHost, it) }
                 if (addrs.isNotEmpty()) {
                     cache[cleanHost] = addrs
                     return addrs
@@ -153,10 +103,11 @@ object ApiClient {
                     return candidates
                 }
             } catch (e: Exception) {
-                // System DNS failed or poisoned
+                // System DNS failed or poisoned by ISP
             }
 
-            // 3. Fallback to Google / Cloudflare DoH (with bounded 1.2s timeout)
+            // 3. Dynamic DoH fallback (Google 8.8.8.8, Cloudflare 1.1.1.1 & 1.0.0.1)
+            // Dynamically queries real-time IPs, preventing failure when Anycast IPs rotate
             try {
                 val dohAddrs = resolveDoH(cleanHost)
                 if (dohAddrs.isNotEmpty()) {

@@ -8,6 +8,7 @@ import com.nanzstream.nanas.data.model.MediaItem
 import com.nanzstream.nanas.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
@@ -29,26 +30,27 @@ object BacakomikScraper {
 
     private suspend fun fetchHtml(url: String, referer: String = "$BASE_URL/"): String? =
         withContext(Dispatchers.IO) {
-            val chromeHeaders = mapOf(
-                "User-Agent" to USER_AGENT,
-                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Accept-Language" to "id,en-US;q=0.9,en;q=0.8",
-                "sec-ch-ua" to "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"",
-                "sec-ch-ua-mobile" to "?0",
-                "sec-ch-ua-platform" to "\"Windows\"",
-                "sec-fetch-dest" to "document",
-                "sec-fetch-mode" to "navigate",
-                "sec-fetch-site" to "none",
-                "sec-fetch-user" to "?1",
-                "upgrade-insecure-requests" to "1",
-                "Referer" to referer
-            )
+            val htmlHeaders = Headers.Builder()
+                .add("User-Agent", USER_AGENT)
+                .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                .add("Accept-Language", "id,en-US;q=0.9,en;q=0.8")
+                .add("sec-ch-ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
+                .add("sec-ch-ua-mobile", "?0")
+                .add("sec-ch-ua-platform", "\"Windows\"")
+                .add("sec-fetch-dest", "document")
+                .add("sec-fetch-mode", "navigate")
+                .add("sec-fetch-site", if (referer.isNotEmpty()) "same-origin" else "none")
+                .add("sec-fetch-user", "?1")
+                .add("upgrade-insecure-requests", "1")
+                .apply {
+                    if (referer.isNotEmpty()) add("Referer", referer)
+                }
+                .build()
 
             // 1. Primary: Direct OkHttp client with verified browser headers
             try {
-                val reqBuilder = Request.Builder().url(url)
-                chromeHeaders.forEach { (k, v) -> reqBuilder.header(k, v) }
-                val resp = directClient.newCall(reqBuilder.build()).execute()
+                val req = Request.Builder().url(url).headers(htmlHeaders).build()
+                val resp = directClient.newCall(req).execute()
                 if (resp.isSuccessful) {
                     val body = resp.body?.string()
                     if (!body.isNullOrBlank() && !body.contains("<title>403 Forbidden</title>", ignoreCase = true) && !body.contains("Access denied", ignoreCase = true)) {
@@ -59,11 +61,10 @@ object BacakomikScraper {
                 // Direct connection failed, fall through to resilient DoH client
             }
 
-            // 2. Secondary: ApiClient.okHttpClient (DoH / anti-censorship resilient DNS)
+            // 2. Secondary: ApiClient.okHttpClient (Dynamic DoH / anti-censorship resilient DNS)
             try {
-                val reqBuilder = Request.Builder().url(url)
-                chromeHeaders.forEach { (k, v) -> reqBuilder.header(k, v) }
-                val resp = ApiClient.okHttpClient.newCall(reqBuilder.build()).execute()
+                val req = Request.Builder().url(url).headers(htmlHeaders).build()
+                val resp = ApiClient.okHttpClient.newCall(req).execute()
                 if (resp.isSuccessful) {
                     val body = resp.body?.string()
                     if (!body.isNullOrBlank() && !body.contains("<title>403 Forbidden</title>", ignoreCase = true) && !body.contains("Access denied", ignoreCase = true)) {
@@ -76,23 +77,25 @@ object BacakomikScraper {
 
             // 3. Fallback: Mobile Chrome User-Agent
             try {
-                val mobileHeaders = mapOf(
-                    "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                    "Accept-Language" to "id,en-US;q=0.9,en;q=0.8",
-                    "sec-ch-ua" to "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"",
-                    "sec-ch-ua-mobile" to "?1",
-                    "sec-ch-ua-platform" to "\"Android\"",
-                    "sec-fetch-dest" to "document",
-                    "sec-fetch-mode" to "navigate",
-                    "sec-fetch-site" to "none",
-                    "sec-fetch-user" to "?1",
-                    "upgrade-insecure-requests" to "1",
-                    "Referer" to referer
-                )
-                val reqBuilder = Request.Builder().url(url)
-                mobileHeaders.forEach { (k, v) -> reqBuilder.header(k, v) }
-                val resp = directClient.newCall(reqBuilder.build()).execute()
+                val mobileHeaders = Headers.Builder()
+                    .add("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                    .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                    .add("Accept-Language", "id,en-US;q=0.9,en;q=0.8")
+                    .add("sec-ch-ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
+                    .add("sec-ch-ua-mobile", "?1")
+                    .add("sec-ch-ua-platform", "\"Android\"")
+                    .add("sec-fetch-dest", "document")
+                    .add("sec-fetch-mode", "navigate")
+                    .add("sec-fetch-site", if (referer.isNotEmpty()) "same-origin" else "none")
+                    .add("sec-fetch-user", "?1")
+                    .add("upgrade-insecure-requests", "1")
+                    .apply {
+                        if (referer.isNotEmpty()) add("Referer", referer)
+                    }
+                    .build()
+
+                val req = Request.Builder().url(url).headers(mobileHeaders).build()
+                val resp = directClient.newCall(req).execute()
                 if (resp.isSuccessful) {
                     val body = resp.body?.string()
                     if (!body.isNullOrBlank() && !body.contains("<title>403 Forbidden</title>", ignoreCase = true) && !body.contains("Access denied", ignoreCase = true)) {

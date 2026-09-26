@@ -9,6 +9,7 @@ import android.os.Build
 import com.nanzstream.nanas.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -77,24 +78,23 @@ object WebtoonBitmapDecoder {
                 else -> "https://bacakomik.my/"
             }
 
-            val chromeImageHeaders = mapOf(
-                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Referer" to referer,
-                "Accept" to "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                "Accept-Language" to "id,en-US;q=0.9,en;q=0.8",
-                "sec-ch-ua" to "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"",
-                "sec-ch-ua-mobile" to "?0",
-                "sec-ch-ua-platform" to "\"Windows\"",
-                "sec-fetch-dest" to "image",
-                "sec-fetch-mode" to "no-cors",
-                "sec-fetch-site" to "cross-site"
-            )
+            val imageHeaders = Headers.Builder()
+                .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .add("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                .add("Accept-Language", "id,en-US;q=0.9,en;q=0.8")
+                .add("sec-ch-ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
+                .add("sec-ch-ua-mobile", "?0")
+                .add("sec-ch-ua-platform", "\"Windows\"")
+                .add("sec-fetch-dest", "image")
+                .add("sec-fetch-mode", "no-cors")
+                .add("sec-fetch-site", "cross-site")
+                .add("Referer", referer)
+                .build()
 
             var resp: Response? = null
             try {
-                val reqBuilder = Request.Builder().url(cleanUrl)
-                chromeImageHeaders.forEach { (k, v) -> reqBuilder.header(k, v) }
-                val directResp = directImageClient.newCall(reqBuilder.build()).execute()
+                val req = Request.Builder().url(cleanUrl).headers(imageHeaders).build()
+                val directResp = directImageClient.newCall(req).execute()
                 if (directResp.isSuccessful && directResp.body != null) {
                     resp = directResp
                 } else {
@@ -106,9 +106,8 @@ object WebtoonBitmapDecoder {
 
             if (resp == null) {
                 try {
-                    val reqBuilder = Request.Builder().url(cleanUrl)
-                    chromeImageHeaders.forEach { (k, v) -> reqBuilder.header(k, v) }
-                    val fallbackResp = ApiClient.okHttpClient.newCall(reqBuilder.build()).execute()
+                    val req = Request.Builder().url(cleanUrl).headers(imageHeaders).build()
+                    val fallbackResp = ApiClient.okHttpClient.newCall(req).execute()
                     if (fallbackResp.isSuccessful && fallbackResp.body != null) {
                         resp = fallbackResp
                     } else {
@@ -116,6 +115,32 @@ object WebtoonBitmapDecoder {
                     }
                 } catch (e: Exception) {
                     // fallback failed
+                }
+            }
+
+            if (resp == null) {
+                try {
+                    val mobileImageHeaders = Headers.Builder()
+                        .add("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                        .add("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                        .add("Accept-Language", "id,en-US;q=0.9,en;q=0.8")
+                        .add("sec-ch-ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
+                        .add("sec-ch-ua-mobile", "?1")
+                        .add("sec-ch-ua-platform", "\"Android\"")
+                        .add("sec-fetch-dest", "image")
+                        .add("sec-fetch-mode", "no-cors")
+                        .add("sec-fetch-site", "cross-site")
+                        .add("Referer", referer)
+                        .build()
+                    val req = Request.Builder().url(cleanUrl).headers(mobileImageHeaders).build()
+                    val mobileResp = directImageClient.newCall(req).execute()
+                    if (mobileResp.isSuccessful && mobileResp.body != null) {
+                        resp = mobileResp
+                    } else {
+                        mobileResp.close()
+                    }
+                } catch (e: Exception) {
+                    // mobile failed
                 }
             }
 
