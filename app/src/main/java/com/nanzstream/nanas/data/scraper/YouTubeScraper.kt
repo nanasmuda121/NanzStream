@@ -538,7 +538,7 @@ object YouTubeScraper {
                 sd = json?.optJSONObject("streamingData")
             }
             if (sd == null) return@withContext null
-            val title = json.optJSONObject("videoDetails")?.optString("title") ?: "YouTube Video"
+            val title = json?.optJSONObject("videoDetails")?.optString("title") ?: "YouTube Video"
 
             val hlsManifest = sd?.optString("hlsManifestUrl")
             val adaptiveArr = sd?.optJSONArray("adaptiveFormats")

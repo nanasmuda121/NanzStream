@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -79,6 +80,7 @@ import com.nanzstream.nanas.PlaybackController
 import com.nanzstream.nanas.data.model.CategoryType
 import com.nanzstream.nanas.data.model.ContinueWatchingItem
 import com.nanzstream.nanas.data.model.EpisodeItem
+import com.nanzstream.nanas.data.model.MediaDetail
 import com.nanzstream.nanas.data.model.StreamResult
 import com.nanzstream.nanas.data.repository.MediaRepository
 import com.nanzstream.nanas.data.scraper.StreamResolver
@@ -1210,7 +1212,9 @@ fun VideoPlayerScreen(
                                     }
                                 }
                             }
-                        } else if (isMovieBelow && episodesList.size <= 1) {
+                        }
+
+                        if (isMovieBelow && episodesList.size <= 1) {
                             Spacer(modifier = Modifier.height(20.dp))
                             Text(
                                 text = "INFORMASI FILM",
