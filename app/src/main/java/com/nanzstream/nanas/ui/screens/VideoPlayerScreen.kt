@@ -375,12 +375,12 @@ fun VideoPlayerScreen(
                         dsHeaders["Referer"] = defaultReferer
                     }
 
-                    // CRITICAL ANTI-LAG FIX: VK/OK.ru CDN (vkuser.net) and Otakudesu CDN (odcloud.net)
-                    // strictly reject requests with foreign cross-origin Referers (returns HTTP 400 Bad Request)!
+                    // CRITICAL ANTI-LAG FIX: VK/OK.ru CDN (vkuser.net) and Vidhide CDN (-cdn.com)
+                    // strictly reject requests with foreign cross-origin Referers (returns HTTP 400/403)!
                     val isVkOrOkRu = playableUrl.contains("vkuser.net", ignoreCase = true) ||
                             playableUrl.contains("ok.ru", ignoreCase = true)
-                    val isOdCloud = playableUrl.contains("odcloud.net", ignoreCase = true)
-                    if (isVkOrOkRu || isOdCloud) {
+                    val isCdnStream = playableUrl.contains("-cdn.com", ignoreCase = true)
+                    if (isVkOrOkRu || isCdnStream) {
                         dsHeaders.remove("Referer")
                         dsHeaders.remove("Origin")
                     }

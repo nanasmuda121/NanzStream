@@ -145,7 +145,7 @@ fun KomikPortalScreen(
                             letterSpacing = 0.5.sp
                         )
                         Text(
-                            text = "Line Webtoon ID • Vertikal & Resmi",
+                            text = "Bacakomik • Manga, Manhwa & Manhua",
                             color = TextDim,
                             fontSize = 10.sp
                         )
@@ -520,7 +520,7 @@ fun KomikPortalScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Cari judul komik di Webtoon...", color = TextDim, fontSize = 13.sp) },
+                            placeholder = { Text("Cari judul komik di Bacakomik...", color = TextDim, fontSize = 13.sp) },
                             singleLine = true,
                             leadingIcon = {
                                 Icon(Icons.Default.Search, contentDescription = null, tint = TextDim)

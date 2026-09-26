@@ -669,9 +669,16 @@ fun MangaPageView(page: MangaPageItem) {
             val imageModel = if (isLocalFile) {
                 File(page.url.removePrefix("file://"))
             } else {
+                val referer = if (page.url.contains("webtoon") || page.url.contains("pstatic.net")) {
+                    "https://www.webtoons.com/"
+                } else if (page.url.contains("animasu")) {
+                    "https://animasu.love/"
+                } else {
+                    "https://bacakomik.my/"
+                }
                 ImageRequest.Builder(LocalContext.current)
                     .data(page.url)
-                    .addHeader("Referer", "https://www.webtoons.com/")
+                    .addHeader("Referer", referer)
                     .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
                     .crossfade(true)
                     .build()

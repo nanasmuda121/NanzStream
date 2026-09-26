@@ -31,10 +31,9 @@ class MediaRepository {
 
         try {
             val anime = try {
-                val s = AnimasuScraper.getLatest(1)
-                if (s.isNotEmpty()) s else OtakudesuScraper.getLatest(1)
+                AnimasuScraper.getLatest(1)
             } catch (e: Exception) {
-                OtakudesuScraper.getLatest(1)
+                emptyList()
             }
             val donghua = DonghuaScraper.getLatest(1)
             val komik = try {
@@ -58,7 +57,7 @@ class MediaRepository {
     }
 
     suspend fun getAnimeLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
-        val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
+        val res = kotlinx.coroutines.withTimeoutOrNull(5000) {
             try {
                 val s = AnimasuScraper.getLatest(page)
                 if (s.isNotEmpty()) s else null
@@ -67,16 +66,6 @@ class MediaRepository {
             }
         }
         if (!res.isNullOrEmpty()) return@withContext res
-
-        val res2 = kotlinx.coroutines.withTimeoutOrNull(3000) {
-            try {
-                val s = OtakudesuScraper.getLatest(page)
-                if (s.isNotEmpty()) s else null
-            } catch (e: Exception) {
-                null
-            }
-        }
-        if (!res2.isNullOrEmpty()) return@withContext res2
 
         getFallbackAnime()
     }
@@ -130,7 +119,7 @@ class MediaRepository {
     }
 
     suspend fun getAnimeSchedule(dayIndex: Int): List<MediaItem> = withContext(Dispatchers.IO) {
-        val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
+        val res = kotlinx.coroutines.withTimeoutOrNull(5000) {
             try {
                 val s = AnimasuScraper.getSchedule(dayIndex)
                 if (s.isNotEmpty()) s else null
@@ -139,16 +128,6 @@ class MediaRepository {
             }
         }
         if (!res.isNullOrEmpty()) return@withContext res
-
-        val res2 = kotlinx.coroutines.withTimeoutOrNull(3000) {
-            try {
-                val s = OtakudesuScraper.getSchedule(dayIndex)
-                if (s.isNotEmpty()) s else null
-            } catch (e: Exception) {
-                null
-            }
-        }
-        if (!res2.isNullOrEmpty()) return@withContext res2
 
         getFallbackAnimeSchedule(dayIndex)
     }
@@ -229,10 +208,7 @@ class MediaRepository {
             val results = mutableListOf<MediaItem>()
             try {
                 when (category) {
-                    CategoryType.ANIME -> {
-                        val ani = AnimasuScraper.search(query, page)
-                        if (ani.isNotEmpty()) results.addAll(ani) else results.addAll(OtakudesuScraper.search(query))
-                    }
+                    CategoryType.ANIME -> results.addAll(AnimasuScraper.search(query, page))
                     CategoryType.DONGHUA -> results.addAll(DonghuaScraper.search(query, page))
                     CategoryType.MANGA -> {
                         val kom = BacakomikScraper.search(query, page)
@@ -244,10 +220,9 @@ class MediaRepository {
                     CategoryType.ALL -> {
                         val animeAsync = async {
                             try {
-                                val s = AnimasuScraper.search(query, 1)
-                                if (s.isNotEmpty()) s else OtakudesuScraper.search(query)
+                                AnimasuScraper.search(query, 1)
                             } catch (e: Exception) {
-                                OtakudesuScraper.search(query)
+                                emptyList()
                             }
                         }
                         val donghuaAsync = async { DonghuaScraper.search(query, 1) }
@@ -298,12 +273,7 @@ class MediaRepository {
                 when (category) {
                     CategoryType.ANIME -> {
                         val aniList = AnimasuScraper.search(cleanQ).take(8).map { it.title }
-                        if (aniList.isNotEmpty()) {
-                            aniList.forEach { add(it) }
-                        } else {
-                            val otList = OtakudesuScraper.search(cleanQ).take(8).map { it.title }
-                            otList.forEach { add(it) }
-                        }
+                        aniList.forEach { add(it) }
                     }
                     CategoryType.DONGHUA -> {
                         val dhList = DonghuaScraper.search(cleanQ, 1).take(6).map { it.title }
@@ -332,15 +302,14 @@ class MediaRepository {
                     }
                     else -> {
                         val anime = try {
-                            val s = AnimasuScraper.search(cleanQ, 1).take(2).map { it.title }
-                            if (s.isNotEmpty()) s else OtakudesuScraper.search(cleanQ).take(2).map { it.title }
+                            AnimasuScraper.search(cleanQ, 1).take(2).map { it.title }
                         } catch (e: Exception) {
-                            OtakudesuScraper.search(cleanQ).take(2).map { it.title }
+                            emptyList()
                         }
                         val dh = DonghuaScraper.search(cleanQ, 1).take(2).map { it.title }
                         val wt = BacakomikScraper.search(cleanQ, 1).take(2).map { it.title }
-                        val dc = DracinemaScraper.search(cleanQ).take(2).map { it.title }
-                        val yt = YouTubeScraper.search(cleanQ).take(2).map { it.title }
+                        val dc = DracinemaScraper.search(cleanQ, 1).take(2).map { it.title }
+                        val yt = YouTubeScraper.search(cleanQ, 1).take(2).map { it.title }
                         (anime + dh + wt + dc + yt).forEach { add(it) }
                     }
                 }
@@ -357,7 +326,7 @@ class MediaRepository {
                 when (category) {
                     CategoryType.ANIME -> {
                         // 1. Primary: Animasu
-                        val aniDetail = kotlinx.coroutines.withTimeoutOrNull(4500) {
+                        val aniDetail = kotlinx.coroutines.withTimeoutOrNull(5000) {
                             try {
                                 AnimasuScraper.getDetail(idOrSlug)
                             } catch (e: Exception) {
@@ -366,18 +335,8 @@ class MediaRepository {
                         }
                         if (aniDetail != null && aniDetail.episodes.isNotEmpty()) return@withContext aniDetail
 
-                        // 2. Secondary: Otakudesu
-                        val otDetail = kotlinx.coroutines.withTimeoutOrNull(3000) {
-                            try {
-                                OtakudesuScraper.getDetail(idOrSlug)
-                            } catch (e: Exception) {
-                                null
-                            }
-                        }
-                        if (otDetail != null && otDetail.episodes.isNotEmpty()) return@withContext otDetail
-
-                        // 3. Fallback: Samehadaku
-                        val samDetail = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                        // 2. Fallback: Samehadaku
+                        val samDetail = kotlinx.coroutines.withTimeoutOrNull(3000) {
                             try {
                                 AnimeScraper.getDetail(idOrSlug)
                             } catch (e: Exception) {
@@ -434,7 +393,7 @@ class MediaRepository {
                         var epUrl = targetUrlOrSlug
 
                         // 1. Primary: Animasu (Direct Vidhide HLS .m3u8 unblocked on high-speed CDN)
-                        val isAnimasu = epUrl.contains("animasu", ignoreCase = true) || (!epUrl.contains("otakudesu", ignoreCase = true) && !epUrl.contains("samehadaku", ignoreCase = true))
+                        val isAnimasu = epUrl.contains("animasu", ignoreCase = true) || !epUrl.contains("samehadaku", ignoreCase = true)
 
                         if (isAnimasu) {
                             if (epUrl.contains("/anime/", ignoreCase = true) || (!epUrl.contains("/nonton-", ignoreCase = true) && !epUrl.contains("episode-", ignoreCase = true))) {
@@ -463,19 +422,7 @@ class MediaRepository {
                             }
                         }
 
-                        // 2. Secondary: Otakudesu (Direct HLS/MP4)
-                        val otStream = kotlinx.coroutines.withTimeoutOrNull(4000) {
-                            try {
-                                OtakudesuScraper.getStream(targetUrlOrSlug)
-                            } catch (e: Exception) {
-                                null
-                            }
-                        }
-                        if (otStream != null && (otStream.directHlsUrl != null || otStream.servers.isNotEmpty())) {
-                            return@withContext otStream
-                        }
-
-                        // 3. Tertiary: Samehadaku
+                        // 2. Fallback: Samehadaku
                         var samUrl = targetUrlOrSlug
                         if (samUrl.contains("/anime/", ignoreCase = true) || (!samUrl.contains("episode-", ignoreCase = true) && !samUrl.contains("-episode-", ignoreCase = true))) {
                             val detail = AnimeScraper.getDetail(samUrl)
@@ -587,11 +534,11 @@ class MediaRepository {
     fun getFallbackSpotlight(): List<MediaItem> = listOf(
         MediaItem(
             id = "spotlight_anime",
-            title = "Hell Mode: Gamer wa Hai Settei 2nd Season",
+            title = "Hell Mode: Yarikomi Suki no Gamer",
             category = CategoryType.ANIME,
-            thumbnail = "https://otakudesu.blog/wp-content/uploads/2026/07/156314.jpg",
-            url = "https://otakudesu.blog/anime/hell-mode-s2-sub-indo/",
-            slug = "https://otakudesu.blog/anime/hell-mode-s2-sub-indo/",
+            thumbnail = "https://animasu.love/wp-content/uploads/2026/01/Hell-Mode-Yarikomi-Suki-no-Gamer-wa-Hai-Settei-no-Isekai-de-Musou-Suru-Hajime-no-Shou-Sub-Indo.jpg",
+            url = "https://animasu.love/anime/hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou/",
+            slug = "https://animasu.love/anime/hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou/",
             badge = "Episode 13 (End)",
             synopsis = "Petualangan gamer mode neraka di dunia lain dengan kasta terendah.",
             rating = "8.6",
@@ -601,10 +548,10 @@ class MediaRepository {
     )
 
     fun getFallbackAnime(): List<MediaItem> = listOf(
-        MediaItem("anime_1", "Hell Mode: Gamer wa Hai Settei 2nd Season", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/156314.jpg", "https://otakudesu.blog/anime/hell-mode-s2-sub-indo/", "https://otakudesu.blog/anime/hell-mode-s2-sub-indo/", "Ep 13 (End)"),
-        MediaItem("anime_2", "One Piece", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2021/05/One-Piece-Sub-Indo.jpg", "https://otakudesu.blog/anime/1piece-sub-indo/", "https://otakudesu.blog/anime/1piece-sub-indo/", "Ep 1179"),
-        MediaItem("anime_3", "Tensei shitara Slime Datta Ken 4th Season", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/156329.jpg", "https://otakudesu.blog/anime/slime-s4-sub-indo/", "https://otakudesu.blog/anime/slime-s4-sub-indo/", "Ongoing"),
-        MediaItem("anime_4", "Re:Zero Season 3", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/158475.jpg", "https://otakudesu.blog/anime/rezero-s3-sub-indo/", "https://otakudesu.blog/anime/rezero-s3-sub-indo/", "Ongoing")
+        MediaItem("anime_1", "Hell Mode: Gamer wa Hai Settei", CategoryType.ANIME, "https://animasu.love/wp-content/uploads/2026/01/Hell-Mode-Yarikomi-Suki-no-Gamer-wa-Hai-Settei-no-Isekai-de-Musou-Suru-Hajime-no-Shou-Sub-Indo.jpg", "https://animasu.love/anime/hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou/", "https://animasu.love/anime/hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou/", "Ep 13 (End)"),
+        MediaItem("anime_2", "One Piece", CategoryType.ANIME, "https://animasu.love/wp-content/uploads/2021/04/One-Piece-Subtitle-Indonesia.jpg", "https://animasu.love/anime/one-piece-tv-subtitle-indonesia/", "https://animasu.love/anime/one-piece-tv-subtitle-indonesia/", "Ep 1179"),
+        MediaItem("anime_3", "Tensei shitara Slime Datta Ken", CategoryType.ANIME, "https://animasu.love/wp-content/uploads/2024/04/Tensei-shitara-Slime-Datta-Ken-3rd-Season-Subtitle-Indonesia.jpg", "https://animasu.love/anime/tensei-shitara-slime-datta-ken-3rd-season-subtitle-indonesia/", "https://animasu.love/anime/tensei-shitara-slime-datta-ken-3rd-season-subtitle-indonesia/", "Ongoing"),
+        MediaItem("anime_4", "Re:Zero Season 3", CategoryType.ANIME, "https://animasu.love/wp-content/uploads/2024/10/ReZero-kara-Hajimeru-Isekai-Seikatsu-3rd-Season-Subtitle-Indonesia.jpg", "https://animasu.love/anime/rezero-kara-hajimeru-isekai-seikatsu-3rd-season-subtitle-indonesia/", "https://animasu.love/anime/rezero-kara-hajimeru-isekai-seikatsu-3rd-season-subtitle-indonesia/", "Ongoing")
     )
 
     fun getFallbackDonghua(): List<MediaItem> = listOf(
@@ -621,10 +568,10 @@ class MediaRepository {
         val days = listOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
         val d = days.getOrElse(dayIndex) { "Senin" }
         return listOf(
-            MediaItem("fb_ani_1", "Hell Mode: Gamer wa Hai Settei", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/156314.jpg", "https://otakudesu.blog/anime/hell-mode-s2-sub-indo/", "https://otakudesu.blog/anime/hell-mode-s2-sub-indo/", "$d • Ep 13"),
-            MediaItem("fb_ani_2", "Tensei shitara Slime Datta Ken 4th", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/156329.jpg", "https://otakudesu.blog/anime/slime-s4-sub-indo/", "https://otakudesu.blog/anime/slime-s4-sub-indo/", "$d • Ongoing"),
-            MediaItem("fb_ani_3", "One Piece", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2021/05/One-Piece-Sub-Indo.jpg", "https://otakudesu.blog/anime/1piece-sub-indo/", "https://otakudesu.blog/anime/1piece-sub-indo/", "$d • Ep 1179"),
-            MediaItem("fb_ani_4", "Re:Zero Season 3", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/158475.jpg", "https://otakudesu.blog/anime/rezero-s3-sub-indo/", "https://otakudesu.blog/anime/rezero-s3-sub-indo/", "$d • Ongoing")
+            MediaItem("fb_ani_1", "Hell Mode: Gamer wa Hai Settei", CategoryType.ANIME, "https://animasu.love/wp-content/uploads/2026/01/Hell-Mode-Yarikomi-Suki-no-Gamer-wa-Hai-Settei-no-Isekai-de-Musou-Suru-Hajime-no-Shou-Sub-Indo.jpg", "https://animasu.love/anime/hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou/", "https://animasu.love/anime/hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou/", "$d • Ep 13"),
+            MediaItem("fb_ani_2", "Tensei shitara Slime Datta Ken 4th", CategoryType.ANIME, "https://animasu.love/wp-content/uploads/2024/04/Tensei-shitara-Slime-Datta-Ken-3rd-Season-Subtitle-Indonesia.jpg", "https://animasu.love/anime/tensei-shitara-slime-datta-ken-3rd-season-subtitle-indonesia/", "https://animasu.love/anime/tensei-shitara-slime-datta-ken-3rd-season-subtitle-indonesia/", "$d • Ongoing"),
+            MediaItem("fb_ani_3", "One Piece", CategoryType.ANIME, "https://animasu.love/wp-content/uploads/2021/04/One-Piece-Subtitle-Indonesia.jpg", "https://animasu.love/anime/one-piece-tv-subtitle-indonesia/", "https://animasu.love/anime/one-piece-tv-subtitle-indonesia/", "$d • Ep 1179"),
+            MediaItem("fb_ani_4", "Re:Zero Season 3", CategoryType.ANIME, "https://animasu.love/wp-content/uploads/2024/10/ReZero-kara-Hajimeru-Isekai-Seikatsu-3rd-Season-Subtitle-Indonesia.jpg", "https://animasu.love/anime/rezero-kara-hajimeru-isekai-seikatsu-3rd-season-subtitle-indonesia/", "https://animasu.love/anime/rezero-kara-hajimeru-isekai-seikatsu-3rd-season-subtitle-indonesia/", "$d • Ongoing")
         )
     }
 
@@ -653,15 +600,15 @@ class MediaRepository {
             id = idOrSlug,
             title = "Hell Mode: Gamer wa Hai Settei 2nd Season",
             category = CategoryType.ANIME,
-            thumbnail = "https://otakudesu.blog/wp-content/uploads/2026/07/156314.jpg",
+            thumbnail = "https://animasu.love/wp-content/uploads/2026/01/Hell-Mode-Yarikomi-Suki-no-Gamer-wa-Hai-Settei-no-Isekai-de-Musou-Suru-Hajime-no-Shou-Sub-Indo.jpg",
             synopsis = "Petualangan gamer mode neraka di dunia lain dengan kasta terendah.",
             genres = listOf("Action", "Fantasy", "Isekai"),
             status = "Ongoing",
             totalEpisodes = "13 Episode",
             episodes = listOf(
-                EpisodeItem("https://otakudesu.blog/episode/hmode-s2-episode-1-sub-indo/", "1", "Episode 1", "https://otakudesu.blog/episode/hmode-s2-episode-1-sub-indo/"),
-                EpisodeItem("https://otakudesu.blog/episode/hmode-s2-episode-2-sub-indo/", "2", "Episode 2", "https://otakudesu.blog/episode/hmode-s2-episode-2-sub-indo/"),
-                EpisodeItem("https://otakudesu.blog/episode/hmode-s2-episode-13-sub-indo/", "13", "Episode 13 (Terbaru)", "https://otakudesu.blog/episode/hmode-s2-episode-13-sub-indo/")
+                EpisodeItem("https://animasu.love/nonton-hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou-episode-1/", "1", "Episode 1", "https://animasu.love/nonton-hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou-episode-1/"),
+                EpisodeItem("https://animasu.love/nonton-hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou-episode-2/", "2", "Episode 2", "https://animasu.love/nonton-hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou-episode-2/"),
+                EpisodeItem("https://animasu.love/nonton-hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou-episode-13/", "13", "Episode 13 (Terbaru)", "https://animasu.love/nonton-hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru-hajime-no-shou-episode-13/")
             )
         )
     }
