@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.nanzstream.nanas.NanzStreamApp
 import com.nanzstream.nanas.crypto.MangaDecryptor
@@ -135,12 +136,16 @@ fun MangaReaderScreen(
             }
         }
 
-        // 2. If not offline, fetch from network
+        // 2. If not offline, fetch from network with bounded timeout
         if (pages.isEmpty()) {
             try {
-                pages = repository.getMangaPages(currentChapterId)
+                val fetched = kotlinx.coroutines.withTimeoutOrNull(5000) {
+                    repository.getMangaPages(currentChapterId)
+                }
+                pages = if (!fetched.isNullOrEmpty()) fetched else repository.getFallbackMangaPages()
             } catch (e: Exception) {
                 e.printStackTrace()
+                pages = repository.getFallbackMangaPages()
             } finally {
                 isLoading = false
             }
@@ -672,13 +677,53 @@ fun MangaPageView(page: MangaPageItem) {
                     .build()
             }
 
-            AsyncImage(
+            SubcomposeAsyncImage(
                 model = imageModel,
                 contentDescription = "Halaman ${page.page}",
                 contentScale = ContentScale.FillWidth,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .wrapContentHeight()
+                    .wrapContentHeight(),
+                loading = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(280.dp)
+                            .background(Color(0xFF141414)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                color = AccentColor,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = "Memuat Halaman ${page.page}...",
+                                color = TextMuted,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                },
+                error = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .background(Color(0xFF1A1A1A)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Halaman ${page.page} gagal dimuat",
+                            color = TextMuted,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
             )
         }
     }

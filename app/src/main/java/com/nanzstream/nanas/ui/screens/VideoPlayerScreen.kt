@@ -54,7 +54,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.compose.foundation.lazy.LazyRow
@@ -178,11 +178,8 @@ fun VideoPlayerScreen(
 
     // 100% Native ExoPlayer with custom LoadControl for lag resilience
     val exoPlayer = remember {
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+        val httpDataSourceFactory = OkHttpDataSource.Factory(ApiClient.okHttpClient)
             .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-            .setConnectTimeoutMs(20_000)
-            .setReadTimeoutMs(25_000)
-            .setAllowCrossProtocolRedirects(true)
 
         // Resilient buffer control: 30s min buffer, 90s max buffer, instant startup (1s), smooth recovery without stuttering
         val loadControl = DefaultLoadControl.Builder()
@@ -387,11 +384,8 @@ fun VideoPlayerScreen(
                         dsHeaders.remove("Origin")
                     }
 
-                    val dsFactory = DefaultHttpDataSource.Factory()
+                    val dsFactory = OkHttpDataSource.Factory(ApiClient.okHttpClient)
                         .setUserAgent(userAgent)
-                        .setConnectTimeoutMs(20_000)
-                        .setReadTimeoutMs(25_000)
-                        .setAllowCrossProtocolRedirects(true)
 
                     if (dsHeaders.isNotEmpty()) {
                         dsFactory.setDefaultRequestProperties(dsHeaders)

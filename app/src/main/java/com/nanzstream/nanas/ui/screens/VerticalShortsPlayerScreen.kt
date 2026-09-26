@@ -39,8 +39,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import com.nanzstream.nanas.data.remote.ApiClient
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -149,11 +150,8 @@ fun VerticalShortsPlayerScreen(
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
-        val httpFactory = DefaultHttpDataSource.Factory()
+        val httpFactory = OkHttpDataSource.Factory(ApiClient.okHttpClient)
             .setUserAgent(YouTubeScraper.IOS_USER_AGENT)
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(15000)
 
         ExoPlayer.Builder(context)
             .setLoadControl(loadControl)
@@ -224,11 +222,8 @@ fun VerticalShortsPlayerScreen(
 
             val streamUrl = res?.directHlsUrl ?: res?.servers?.firstOrNull()?.url
             if (!streamUrl.isNullOrBlank()) {
-                val httpFactory = DefaultHttpDataSource.Factory()
+                val httpFactory = OkHttpDataSource.Factory(ApiClient.okHttpClient)
                     .setUserAgent(YouTubeScraper.IOS_USER_AGENT)
-                    .setAllowCrossProtocolRedirects(true)
-                    .setConnectTimeoutMs(15000)
-                    .setReadTimeoutMs(15000)
                     .setDefaultRequestProperties(mapOf("Origin" to "https://www.youtube.com", "Referer" to "https://www.youtube.com/"))
 
                 val audioUrl = res?.audioUrl

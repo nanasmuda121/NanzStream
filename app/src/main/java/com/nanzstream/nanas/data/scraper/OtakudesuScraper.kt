@@ -355,61 +355,14 @@ object OtakudesuScraper {
 
         val title = doc.selectFirst("h1.posttl, h1")?.text()?.trim() ?: "Anime Episode"
         val servers = mutableListOf<StreamServerItem>()
-        var directMp4: String? = null
+        var primaryHlsUrl: String? = null
 
-        // 1. Direct iframes on the episode page
-        doc.select("#pembed iframe, .responsive-embed-stream iframe, iframe").forEach { iframe ->
-            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
-            if (src.isNotBlank() && src.startsWith("http") && !src.contains("about:blank")) {
-                if (src.contains("desustream.net")) {
-                    try {
-                        val desuHtml = fetchHtml(src, referer = "$BASE_URL/")
-                        if (desuHtml != null) {
-                            val directMatch = Regex("""videoURL\s*=\s*["']([^"']+)["']""").find(desuHtml)
-                                ?: Regex("""(https?://[^\s"']+\.mp4[^\s"']*)""").find(desuHtml)
-                                ?: Regex("""(https?://[^\s"']+\.m3u8[^\s"']*)""").find(desuHtml)
-                            val directUrl = directMatch?.groupValues?.get(1)
-                            if (!directUrl.isNullOrBlank() && directUrl.startsWith("http") && !directUrl.endsWith("/.mp4") && !directUrl.contains("/download/.mp4")) {
-                                directMp4 = directUrl
-                                servers.add(
-                                    StreamServerItem(
-                                        name = "Otaku Server (720p Direct MP4)",
-                                        url = directUrl,
-                                        isDirectHls = true
-                                    )
-                                )
-                            } else {
-                                servers.add(StreamServerItem(name = "DesuStream Player", url = src, isDirectHls = false))
-                            }
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                } else if (src.contains("ok.ru/videoembed/")) {
-                    val okDirect = StreamResolver.extractOkRuDirect(src, "$BASE_URL/")
-                    if (!okDirect.isNullOrBlank()) {
-                        if (directMp4 == null) directMp4 = okDirect
-                        servers.add(StreamServerItem("OK.ru Direct Stream", okDirect, isDirectHls = true))
-                    }
-                    servers.add(StreamServerItem("OK.ru Player", src, isDirectHls = false))
-                } else {
-                    val name = when {
-                        src.contains("blogger.com") -> "Blogger Player"
-                        src.contains("ok.ru") -> "OK.ru Player"
-                        else -> "Server 1"
-                    }
-                    servers.add(StreamServerItem(name = name, url = src, isDirectHls = false))
-                }
-            }
-        }
-
-        // 2. Dynamic mirrors from .mirrorstream: only query if directMp4 is not yet discovered from primary iframe
-        if (directMp4 == null) {
-            try {
-                val dataContents = doc.select(".mirrorstream a[data-content]").take(2)
-                if (dataContents.isNotEmpty()) {
-                    val nonceJson = postAjax(mapOf("action" to "aa1208d27f29ca340c92c66d1926f13f"))
-                    val nonce = nonceJson?.let { JSONObject(it).optString("data") }
+        // 1. Prioritize Vidhide & Dynamic mirrors from .mirrorstream (Provides 100% UNBLOCKED DIRECT HLS .m3u8)
+        try {
+            val dataContents = doc.select(".mirrorstream a[data-content]")
+            if (dataContents.isNotEmpty()) {
+                val nonceJson = postAjax(mapOf("action" to "aa1208d27f29ca340c92c66d1926f13f"))
+                val nonce = nonceJson?.let { JSONObject(it).optString("data") }
                 if (!nonce.isNullOrBlank()) {
                     for (el in dataContents) {
                         try {
@@ -417,7 +370,12 @@ object OtakudesuScraper {
                             if (b64.isBlank()) continue
                             val contentJson = JSONObject(String(Base64.decode(b64, Base64.DEFAULT), Charsets.UTF_8))
                             val q = contentJson.optString("q")
-                            if (q == "720p" || (q == "480p" && servers.size < 4)) {
+                            val isVidhide = el.text().contains("vidhide", ignoreCase = true)
+                            val isFiledon = el.text().contains("filedon", ignoreCase = true)
+                            val isMega = el.text().contains("mega", ignoreCase = true)
+
+                            // Prioritize Vidhide for direct HLS .m3u8
+                            if (isVidhide || isFiledon || isMega) {
                                 val mirrorResp = postAjax(
                                     mapOf(
                                         "id" to contentJson.optString("id"),
@@ -432,28 +390,24 @@ object OtakudesuScraper {
                                     val mHtml = String(Base64.decode(rawB64, Base64.DEFAULT), Charsets.UTF_8)
                                     val mSrc = Regex("""src=["']([^"']+)["']""").find(mHtml)?.groupValues?.get(1)
                                     if (!mSrc.isNullOrBlank()) {
-                                        if (mSrc.contains("desustream")) {
-                                            val arcHtml = fetchHtml(mSrc, referer = "$BASE_URL/")
-                                            val arcMp4 = Regex("""(https?://[^\s"']+\.mp4[^\s"']*)""").find(arcHtml ?: "")?.groupValues?.get(1)
-                                            if (!arcMp4.isNullOrBlank() && arcMp4.startsWith("http") && !arcMp4.endsWith("/.mp4") && !arcMp4.contains("/download/.mp4") && arcMp4.length > 25 && !servers.any { it.url == arcMp4 }) {
-                                                if (directMp4 == null) directMp4 = arcMp4
+                                        if (isVidhide) {
+                                            val directHls = StreamResolver.extractVidhideHls(mSrc, "$BASE_URL/")
+                                            if (!directHls.isNullOrBlank() && !servers.any { it.url == directHls }) {
+                                                if (primaryHlsUrl == null && (q == "720p" || q == "480p")) {
+                                                    primaryHlsUrl = directHls
+                                                }
                                                 servers.add(
                                                     StreamServerItem(
-                                                        name = "Otaku Archive ($q Direct MP4)",
-                                                        url = arcMp4,
+                                                        name = "Otaku Server ($q Direct HLS)",
+                                                        url = directHls,
                                                         isDirectHls = true
                                                     )
                                                 )
                                             }
                                         } else {
-                                            val mirrorName = when {
-                                                mSrc.contains("filedon") -> "Filedon ($q)"
-                                                mSrc.contains("vidhide") -> "VidHide ($q)"
-                                                mSrc.contains("mega.nz") -> "Mega ($q)"
-                                                else -> "${el.text().trim().ifBlank { "Mirror" }} ($q)"
-                                            }
+                                            val name = if (isFiledon) "Filedon ($q)" else "Mega ($q)"
                                             if (!servers.any { it.url == mSrc }) {
-                                                servers.add(StreamServerItem(name = mirrorName, url = mSrc, isDirectHls = false))
+                                                servers.add(StreamServerItem(name = name, url = mSrc, isDirectHls = false))
                                             }
                                         }
                                     }
@@ -468,7 +422,50 @@ object OtakudesuScraper {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-    }
+
+        // 2. Direct iframes on the episode page (DesuStream, OK.ru, Blogger)
+        doc.select("#pembed iframe, .responsive-embed-stream iframe, iframe").forEach { iframe ->
+            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
+            if (src.isNotBlank() && src.startsWith("http") && !src.contains("about:blank")) {
+                if (src.contains("desustream.net")) {
+                    try {
+                        val desuHtml = fetchHtml(src, referer = "$BASE_URL/")
+                        if (desuHtml != null) {
+                            val directMatch = Regex("""videoURL\s*=\s*["']([^"']+)["']""").find(desuHtml)
+                                ?: Regex("""(https?://[^\s"']+\.mp4[^\s"']*)""").find(desuHtml)
+                                ?: Regex("""(https?://[^\s"']+\.m3u8[^\s"']*)""").find(desuHtml)
+                            val directUrl = directMatch?.groupValues?.get(1)
+                            if (!directUrl.isNullOrBlank() && directUrl.startsWith("http") && !directUrl.endsWith("/.mp4") && !directUrl.contains("/download/.mp4")) {
+                                servers.add(
+                                    StreamServerItem(
+                                        name = "DesuStream (Direct MP4)",
+                                        url = directUrl,
+                                        isDirectHls = true
+                                    )
+                                )
+                            } else {
+                                servers.add(StreamServerItem(name = "DesuStream Player", url = src, isDirectHls = false))
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                } else if (src.contains("ok.ru/videoembed/")) {
+                    val okDirect = StreamResolver.extractOkRuDirect(src, "$BASE_URL/")
+                    if (!okDirect.isNullOrBlank()) {
+                        servers.add(StreamServerItem("OK.ru Direct Stream", okDirect, isDirectHls = true))
+                    }
+                    servers.add(StreamServerItem("OK.ru Player", src, isDirectHls = false))
+                } else {
+                    val name = when {
+                        src.contains("blogger.com") -> "Blogger Player"
+                        src.contains("ok.ru") -> "OK.ru Player"
+                        else -> "Server ${servers.size + 1}"
+                    }
+                    servers.add(StreamServerItem(name = name, url = src, isDirectHls = false))
+                }
+            }
+        }
 
         // 3. Fallback to download links if needed
         doc.select(".download ul li a").forEach { a ->
@@ -477,9 +474,6 @@ object OtakudesuScraper {
             val host = a.text().trim()
             if (href.startsWith("http") && (href.contains(".mp4") || href.contains("stream") || href.contains("pixeldrain") || href.contains("gofile"))) {
                 val isMp4 = href.contains(".mp4") && !href.endsWith("/.mp4") && !href.contains("/download/.mp4")
-                if (isMp4 && directMp4 == null) {
-                    directMp4 = href
-                }
                 if (!servers.any { it.url == href }) {
                     servers.add(StreamServerItem(name = "$host ($quality)", url = href, isDirectHls = isMp4))
                 }
@@ -490,15 +484,17 @@ object OtakudesuScraper {
             servers.add(StreamServerItem(name = "Otakudesu Web Player", url = targetUrl, isDirectHls = false))
         }
 
-        // Sort so Otaku Archive and Direct MP4 servers are ALWAYS first!
+        // Sort so Otaku Direct HLS servers are ALWAYS first!
         val sortedServers = servers.sortedWith(
             compareBy<StreamServerItem>(
-                { if (it.name.contains("Archive", ignoreCase = true)) 0 else if (it.isDirectHls) 1 else 2 },
-                { if (it.name.contains("720p", ignoreCase = true)) 0 else 1 }
+                { if (it.name.contains("Direct HLS", ignoreCase = true)) 0 else if (it.isDirectHls) 1 else 2 },
+                { if (it.name.contains("720p", ignoreCase = true)) 0 else if (it.name.contains("480p", ignoreCase = true)) 1 else 2 }
             )
         )
 
-        val finalDirect = sortedServers.firstOrNull { it.isDirectHls }?.url ?: directMp4
+        val finalDirect = sortedServers.firstOrNull { it.name.contains("Direct HLS", ignoreCase = true) }?.url
+            ?: primaryHlsUrl
+            ?: sortedServers.firstOrNull { it.isDirectHls }?.url
 
         StreamResult(
             title = title,

@@ -12,8 +12,8 @@ android {
         applicationId = "com.nanzstream.nanas"
         minSdk = 24
         targetSdk = 35
-        versionCode = 41
-        versionName = "1.3.11"
+        versionCode = 42
+        versionName = "1.3.12"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -93,6 +93,7 @@ dependencies {
     implementation("androidx.media3:media3-extractor:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-common:1.4.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.4.1")
 
     // Coil for asynchronous image loading
     implementation("io.coil-kt:coil-compose:2.7.0")

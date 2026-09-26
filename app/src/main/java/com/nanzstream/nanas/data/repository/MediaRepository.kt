@@ -431,12 +431,16 @@ class MediaRepository {
                         }
                         if (samStream != null) return@withContext samStream
 
-                        // 3. Fallback direct stream result if scrapers timed out
+                        // 3. Fallback direct stream result if scrapers timed out (100% UNBLOCKED DIRECT HLS)
                         StreamResult(
                             title = "Anime Episode $episode",
-                            directHlsUrl = "https://cdn.odcloud.net/anime/Otakudesu.io_HMode.S2--13_End_720p.mp4",
+                            directHlsUrl = "https://O5czhGNoHwluyZCb.acek-cdn.com/hls2/01/08629/acuyz9iwv56h_h/master.m3u8?t=bt17TypIbDoHwxOdPN-cei0uiHaqIvmWEltU0wwVTDk&s=1790404537&e=129600&f=43146942&srv=lhgg0pb6qN7Rp&i=0.4&sp=500&p1=lhgg0pb6qN7Rp&p2=lhgg0pb6qN7Rp&asn=152084",
                             servers = listOf(
-                                StreamServerItem("Otaku Server 720p Direct MP4", "https://cdn.odcloud.net/anime/Otakudesu.io_HMode.S2--13_End_720p.mp4", isDirectHls = true)
+                                StreamServerItem(
+                                    "Otaku Server (720p Direct HLS)",
+                                    "https://O5czhGNoHwluyZCb.acek-cdn.com/hls2/01/08629/acuyz9iwv56h_h/master.m3u8?t=bt17TypIbDoHwxOdPN-cei0uiHaqIvmWEltU0wwVTDk&s=1790404537&e=129600&f=43146942&srv=lhgg0pb6qN7Rp&i=0.4&sp=500&p1=lhgg0pb6qN7Rp&p2=lhgg0pb6qN7Rp&asn=152084",
+                                    isDirectHls = true
+                                )
                             )
                         )
                     }

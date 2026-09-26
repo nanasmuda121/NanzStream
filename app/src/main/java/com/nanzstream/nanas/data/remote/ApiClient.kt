@@ -33,6 +33,8 @@ object ApiClient {
         private val staticFallbacks = mapOf(
             "otakudesu.blog" to listOf("172.67.220.233", "104.21.94.77", "104.21.76.66", "172.67.190.239"),
             "www.otakudesu.blog" to listOf("172.67.220.233", "104.21.94.77", "104.21.76.66", "172.67.190.239"),
+            "odvidhide.com" to listOf("172.67.134.187", "104.21.6.107"),
+            "acek-cdn.com" to listOf("203.188.166.68", "203.188.166.71"),
             "desustream.net" to listOf("172.67.134.74", "104.21.25.140", "104.21.76.66", "172.67.190.239"),
             "cdn.odcloud.net" to listOf("172.67.205.2", "104.21.37.60", "104.21.76.66", "172.67.190.239"),
             "samehadaku.li" to listOf("104.21.76.66", "172.67.190.239", "104.21.83.37", "172.67.211.38"),
@@ -97,58 +99,40 @@ object ApiClient {
         }
 
         override fun lookup(hostname: String): List<InetAddress> {
-            cache[hostname]?.let { return it }
-
             val cleanHost = hostname.lowercase().trim()
+            cache[cleanHost]?.let { return it }
 
-            // 1. For known Indonesian ISP blocked media scrapers (Samehadaku, Otakudesu, Anichin, Dracinema):
-            // Use verified unblocked Anycast IPs with host-bound SNI
-            val isKnownBlockedDomain = cleanHost.contains("samehadaku") ||
-                    cleanHost.contains("otakudesu") ||
-                    cleanHost.contains("anichin") ||
-                    cleanHost.contains("dracinema") ||
-                    cleanHost.contains("desustream") ||
-                    cleanHost.contains("odcloud")
+            // 1. Instant Static Fallbacks (0ms lookup, guaranteed anti-blocking for media & CDN domains)
+            val matchedIps = staticFallbacks[cleanHost]
+                ?: staticFallbacks.entries.firstOrNull { cleanHost == it.key || cleanHost.endsWith("." + it.key) }?.value
 
-            if (isKnownBlockedDomain) {
-                staticFallbacks[cleanHost]?.let { ips ->
-                    val staticAddrs = ips.mapNotNull { createAddress(cleanHost, it) }
-                    if (staticAddrs.isNotEmpty()) {
-                        cache[hostname] = staticAddrs
-                        return staticAddrs
-                    }
+            if (!matchedIps.isNullOrEmpty()) {
+                val staticAddrs = matchedIps.mapNotNull { createAddress(cleanHost, it) }
+                if (staticAddrs.isNotEmpty()) {
+                    cache[cleanHost] = staticAddrs
+                    return staticAddrs
                 }
             }
 
             // 2. Try System DNS (filter out Indonesian telco block/landing page IPs)
-            // For legal/unblocked services (Webtoon, YouTube, CDNs), System DNS resolves to the closest local edge (Akamai Jakarta/Singapore)
             try {
                 val systemAddrs = Dns.SYSTEM.lookup(hostname)
                 val validAddrs = systemAddrs.filter { !isBlockedIp(it.hostAddress ?: "") }
                 val v4 = validAddrs.filterIsInstance<Inet4Address>()
                 val candidates = if (v4.isNotEmpty()) v4 else validAddrs
                 if (candidates.isNotEmpty()) {
-                    cache[hostname] = candidates
+                    cache[cleanHost] = candidates
                     return candidates
                 }
             } catch (e: Exception) {
                 // System DNS failed or poisoned
             }
 
-            // 3. Check static fallbacks if not already checked
-            staticFallbacks[cleanHost]?.let { ips ->
-                val staticAddrs = ips.mapNotNull { createAddress(cleanHost, it) }
-                if (staticAddrs.isNotEmpty()) {
-                    cache[hostname] = staticAddrs
-                    return staticAddrs
-                }
-            }
-
-            // 4. Fallback to Cloudflare / Google DoH (with bounded 1.5s timeout)
+            // 3. Fallback to Google / Cloudflare DoH (with bounded 1.2s timeout)
             try {
                 val dohAddrs = resolveDoH(cleanHost)
                 if (dohAddrs.isNotEmpty()) {
-                    cache[hostname] = dohAddrs
+                    cache[cleanHost] = dohAddrs
                     return dohAddrs
                 }
             } catch (e: Exception) {
@@ -160,37 +144,48 @@ object ApiClient {
         }
 
         private fun resolveDoH(hostname: String): List<InetAddress> {
-            val url = URL("https://1.1.1.1/dns-query?name=$hostname&type=A")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 1500
-                readTimeout = 1500
-                setRequestProperty("Accept", "application/dns-json")
-                setRequestProperty("User-Agent", "Mozilla/5.0")
-            }
-            val text = conn.inputStream.bufferedReader().use { it.readText() }
-            conn.disconnect()
-
-            val json = JSONObject(text)
-            val answers = json.optJSONArray("Answer") ?: return emptyList()
-            val results = mutableListOf<InetAddress>()
-            for (i in 0 until answers.length()) {
-                val ans = answers.getJSONObject(i)
-                if (ans.optInt("type") == 1) { // A record
-                    val ip = ans.optString("data")
-                    if (ip.isNotBlank() && !isBlockedIp(ip)) {
-                        createAddress(hostname, ip)?.let { results.add(it) }
+            val dohUrls = listOf(
+                "https://dns.google/resolve?name=$hostname&type=A",
+                "https://1.1.1.1/dns-query?name=$hostname&type=A"
+            )
+            for (endpoint in dohUrls) {
+                try {
+                    val url = URL(endpoint)
+                    val conn = (url.openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 1200
+                        readTimeout = 1200
+                        setRequestProperty("Accept", "application/dns-json")
+                        setRequestProperty("User-Agent", "Mozilla/5.0")
                     }
+                    val text = conn.inputStream.bufferedReader().use { it.readText() }
+                    conn.disconnect()
+
+                    val json = JSONObject(text)
+                    val answers = json.optJSONArray("Answer") ?: continue
+                    val results = mutableListOf<InetAddress>()
+                    for (i in 0 until answers.length()) {
+                        val ans = answers.getJSONObject(i)
+                        if (ans.optInt("type") == 1) { // A record
+                            val ip = ans.optString("data")
+                            if (ip.isNotBlank() && !isBlockedIp(ip)) {
+                                createAddress(hostname, ip)?.let { results.add(it) }
+                            }
+                        }
+                    }
+                    if (results.isNotEmpty()) return results
+                } catch (e: Exception) {
+                    // Try next DoH provider
                 }
             }
-            return results
+            return emptyList()
         }
     }
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .dns(resilientDns)
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(7, TimeUnit.SECONDS)
-        .writeTimeout(7, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
+        .writeTimeout(25, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .followRedirects(true)
         .followSslRedirects(true)

@@ -53,6 +53,14 @@ object StreamResolver {
             }
         }
 
+        // 4. Vidhide embed (Used in Otakudesu Anime for direct unblocked HLS)
+        if (cleanUrl.contains("vidhide") || cleanUrl.contains("odvidhide")) {
+            val direct = extractVidhideHls(cleanUrl, if (referer.isNotBlank()) referer else "https://otakudesu.blog/")
+            if (!direct.isNullOrBlank()) {
+                return@withContext direct
+            }
+        }
+
         // Fallback: return the original URL so ExoPlayer attempts to play it directly
         cleanUrl
     }
@@ -197,6 +205,53 @@ object StreamResolver {
             if (!m3u8Match.isNullOrBlank() && m3u8Match.startsWith("http")) {
                 return@withContext m3u8Match
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        null
+    }
+
+    suspend fun extractVidhideHls(embedUrl: String, referer: String = "https://otakudesu.blog/"): String? = withContext(Dispatchers.IO) {
+        try {
+            val req = Request.Builder()
+                .url(embedUrl)
+                .header("User-Agent", USER_AGENT)
+                .header("Referer", referer)
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .build()
+            val resp = ApiClient.okHttpClient.newCall(req).execute()
+            val html = resp.body?.string() ?: return@withContext null
+
+            // Unpack packed javascript
+            val regex = Regex("""eval\(function\(p,a,c,k,e,d\)\{while\(c--\).*?return p\}\('(.*?)',(\d+),(\d+),'(.*?)'\.split\('\|'\)\)\)""", RegexOption.DOT_MATCHES_ALL)
+            val match = regex.find(html) ?: return@withContext null
+            var p = match.groupValues[1]
+            val a = match.groupValues[2].toIntOrNull() ?: 36
+            var c = match.groupValues[3].toIntOrNull() ?: 0
+            val k = match.groupValues[4].split('|')
+
+            fun baseN(num: Int, base: Int): String {
+                val digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                if (num == 0) return "0"
+                var n = num
+                val sb = StringBuilder()
+                while (n > 0) {
+                    sb.append(digits[n % base])
+                    n /= base
+                }
+                return sb.reverse().toString()
+            }
+
+            while (c > 0) {
+                c--
+                if (c < k.size && k[c].isNotBlank()) {
+                    val key = baseN(c, a)
+                    p = p.replace(Regex("""\b$key\b"""), java.util.regex.Matcher.quoteReplacement(k[c]))
+                }
+            }
+
+            val m3u8Match = Regex("""https?://[^\s"',]+\.m3u8[^\s"',]*""").find(p)
+            return@withContext m3u8Match?.value
         } catch (e: Exception) {
             e.printStackTrace()
         }
