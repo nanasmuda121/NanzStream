@@ -366,6 +366,7 @@ fun VideoPlayerScreen(
                     } else {
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                     }
+                    val dsHeaders = mutableMapOf<String, String>()
                     if (category == CategoryType.MOVIES || playableUrl.contains("hakunaymatata.com", ignoreCase = true) || playableUrl.contains("aoneroom.com", ignoreCase = true)) {
                         dsHeaders["Referer"] = "https://themoviebox.xyz/"
                         dsHeaders["Origin"] = "https://themoviebox.xyz"
