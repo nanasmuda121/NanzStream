@@ -833,163 +833,45 @@ fun VideoPlayerScreen(
 
                     // Floating Controls for PiP, Mode Switcher & Fullscreen Toggle overlay
                     // Synchronized with play/pause or tap auto-hide (User: "tombol yang mengahalangi layar ikut ilang bareng play pause dan muncul ketika klik gitu")
-                    AnimatedVisibility(
+                    VideoPlayerFloatingOverlay(
                         visible = areControlsVisible,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
+                        isFullscreen = isFullscreen,
+                        useWebPlayer = useWebPlayer,
+                        category = category,
+                        onTogglePlayerMode = {
+                            lastControlInteractionTime = System.currentTimeMillis()
+                            if (useWebPlayer) {
+                                useWebPlayer = false
+                                exoPlayer.prepare()
+                                exoPlayer.play()
+                            } else {
+                                useWebPlayer = true
+                                exoPlayer.pause()
+                            }
+                        },
+                        onExitFullscreen = {
+                            lastControlInteractionTime = System.currentTimeMillis()
+                            if (webViewCustomView != null) {
+                                webViewCallback?.onCustomViewHidden()
+                                webViewCustomView = null
+                                webViewCallback = null
+                            }
+                            isFullscreen = false
+                            setSystemFullscreen(activity, false)
+                        },
+                        onEnterFullscreen = {
+                            lastControlInteractionTime = System.currentTimeMillis()
+                            isFullscreen = true
+                            setSystemFullscreen(activity, true)
+                        },
+                        onEnterPiP = {
+                            lastControlInteractionTime = System.currentTimeMillis()
+                            triggerPiP(activity)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .align(Alignment.TopCenter)
-                    ) {
-                        if (isFullscreen) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // Exit Fullscreen Floating Button (Top Left)
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0x99000000))
-                                        .border(1.dp, GlassBorder, CircleShape)
-                                        .clickable {
-                                            lastControlInteractionTime = System.currentTimeMillis()
-                                            if (webViewCustomView != null) {
-                                                webViewCallback?.onCustomViewHidden()
-                                                webViewCustomView = null
-                                                webViewCallback = null
-                                            }
-                                            isFullscreen = false
-                                            setSystemFullscreen(activity, false)
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.FullscreenExit,
-                                        contentDescription = "Keluar Layar Penuh",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-
-                                // Player Mode Switcher in Fullscreen (Top Right)
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(if (useWebPlayer) AccentCyan.copy(alpha = 0.85f) else Color(0x88000000))
-                                        .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
-                                        .clickable {
-                                            lastControlInteractionTime = System.currentTimeMillis()
-                                            if (useWebPlayer) {
-                                                useWebPlayer = false
-                                                exoPlayer.prepare()
-                                                exoPlayer.play()
-                                            } else {
-                                                useWebPlayer = true
-                                                exoPlayer.pause()
-                                            }
-                                        }
-                                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = if (useWebPlayer) "🌐 Web" else "⚡ Native",
-                                        color = Color.White,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        } else {
-                            Box(modifier = Modifier.fillMaxWidth()) {
-                                // Overlay Actions (Top Right: Mode Toggle, PiP & Fullscreen)
-                                Row(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(10.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Player Mode Switcher Toggle Button
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(if (useWebPlayer) AccentCyan.copy(alpha = 0.85f) else Color(0x88000000))
-                                            .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
-                                            .clickable {
-                                                lastControlInteractionTime = System.currentTimeMillis()
-                                                if (useWebPlayer) {
-                                                    useWebPlayer = false
-                                                    exoPlayer.prepare()
-                                                    exoPlayer.play()
-                                                } else {
-                                                    useWebPlayer = true
-                                                    exoPlayer.pause()
-                                                }
-                                            }
-                                            .padding(horizontal = 9.dp, vertical = 5.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = if (useWebPlayer) "🌐 Web" else "⚡ Native",
-                                            color = Color.White,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-
-                                    // Picture-in-Picture Button (STRICTLY REMOVED FOR ANIME)
-                                    if (category != CategoryType.ANIME) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(CircleShape)
-                                                .background(Color(0x88000000))
-                                                .border(1.dp, GlassBorder, CircleShape)
-                                                .clickable {
-                                                    lastControlInteractionTime = System.currentTimeMillis()
-                                                    triggerPiP(activity)
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.PictureInPictureAlt,
-                                                contentDescription = "Picture in Picture",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
-
-                                    // Quick Fullscreen button
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(0x88000000))
-                                            .border(1.dp, GlassBorder, CircleShape)
-                                            .clickable {
-                                                lastControlInteractionTime = System.currentTimeMillis()
-                                                isFullscreen = true
-                                                setSystemFullscreen(activity, true)
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Fullscreen,
-                                            contentDescription = "Layar Penuh",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    )
                 }
 
                 // 3. Scrollable Content Below Player (Episode List & Metadata)
@@ -1734,6 +1616,139 @@ fun VideoPlayerScreen(
                         }
 
                         Spacer(modifier = Modifier.height(40.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VideoPlayerFloatingOverlay(
+    visible: Boolean,
+    isFullscreen: Boolean,
+    useWebPlayer: Boolean,
+    category: CategoryType,
+    onTogglePlayerMode: () -> Unit,
+    onExitFullscreen: () -> Unit,
+    onEnterFullscreen: () -> Unit,
+    onEnterPiP: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier
+    ) {
+        if (isFullscreen) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Exit Fullscreen Floating Button (Top Left)
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x99000000))
+                        .border(1.dp, GlassBorder, CircleShape)
+                        .clickable { onExitFullscreen() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FullscreenExit,
+                        contentDescription = "Keluar Layar Penuh",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                // Player Mode Switcher in Fullscreen (Top Right)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (useWebPlayer) AccentCyan.copy(alpha = 0.85f) else Color(0x88000000))
+                        .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
+                        .clickable { onTogglePlayerMode() }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (useWebPlayer) "🌐 Web" else "⚡ Native",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        } else {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                // Overlay Actions (Top Right: Mode Toggle, PiP & Fullscreen)
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Player Mode Switcher Toggle Button
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (useWebPlayer) AccentCyan.copy(alpha = 0.85f) else Color(0x88000000))
+                            .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
+                            .clickable { onTogglePlayerMode() }
+                            .padding(horizontal = 9.dp, vertical = 5.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (useWebPlayer) "🌐 Web" else "⚡ Native",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // Picture-in-Picture Button (STRICTLY REMOVED FOR ANIME)
+                    if (category != CategoryType.ANIME) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x88000000))
+                                .border(1.dp, GlassBorder, CircleShape)
+                                .clickable { onEnterPiP() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PictureInPictureAlt,
+                                contentDescription = "Picture in Picture",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    // Quick Fullscreen button
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0x88000000))
+                            .border(1.dp, GlassBorder, CircleShape)
+                            .clickable { onEnterFullscreen() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Fullscreen,
+                            contentDescription = "Layar Penuh",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }
