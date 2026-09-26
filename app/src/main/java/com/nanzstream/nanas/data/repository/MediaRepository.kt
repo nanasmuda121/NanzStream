@@ -500,7 +500,7 @@ class MediaRepository {
         getFallbackMangaPages()
     }
 
-    private fun getFallbackMangaPages(): List<MangaPageItem> = listOf(
+    fun getFallbackMangaPages(): List<MangaPageItem> = listOf(
         MangaPageItem(1, "https://webtoon-phinf.pstatic.net/20221212_148/1670822776204rlFgs_PNG/thumb_16708227084656063_Serena_00_01_04.png"),
         MangaPageItem(2, "https://webtoon-phinf.pstatic.net/20221212_294/1670829623744sWIuU_PNG/thumb_16708295446226361_Serena_01_0121.png"),
         MangaPageItem(3, "https://webtoon-phinf.pstatic.net/20221212_291/1670841989803NbD9p_PNG/thumb_16708410697456929_Serena_2_12_01.png"),

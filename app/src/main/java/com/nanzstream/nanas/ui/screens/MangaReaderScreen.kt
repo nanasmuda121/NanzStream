@@ -697,7 +697,7 @@ fun MangaPageView(page: MangaPageItem) {
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             CircularProgressIndicator(
-                                color = AccentColor,
+                                color = Color.White,
                                 strokeWidth = 2.dp,
                                 modifier = Modifier.size(24.dp)
                             )
