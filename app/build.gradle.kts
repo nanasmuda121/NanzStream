@@ -12,8 +12,8 @@ android {
         applicationId = "com.nanzstream.nanas"
         minSdk = 24
         targetSdk = 35
-        versionCode = 40
-        versionName = "1.3.10"
+        versionCode = 41
+        versionName = "1.3.11"
 
         vectorDrawables {
             useSupportLibrary = true

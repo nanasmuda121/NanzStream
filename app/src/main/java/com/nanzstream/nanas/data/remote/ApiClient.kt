@@ -31,15 +31,20 @@ object ApiClient {
         private val cache = ConcurrentHashMap<String, List<InetAddress>>()
 
         private val staticFallbacks = mapOf(
+            "otakudesu.blog" to listOf("172.67.220.233", "104.21.94.77", "104.21.76.66", "172.67.190.239"),
+            "www.otakudesu.blog" to listOf("172.67.220.233", "104.21.94.77", "104.21.76.66", "172.67.190.239"),
+            "desustream.net" to listOf("172.67.134.74", "104.21.25.140", "104.21.76.66", "172.67.190.239"),
+            "cdn.odcloud.net" to listOf("172.67.205.2", "104.21.37.60", "104.21.76.66", "172.67.190.239"),
             "samehadaku.li" to listOf("104.21.76.66", "172.67.190.239", "104.21.83.37", "172.67.211.38"),
             "www.samehadaku.li" to listOf("104.21.76.66", "172.67.190.239", "104.21.83.37", "172.67.211.38"),
-            "otakudesu.blog" to listOf("104.21.76.66", "172.67.190.239", "172.67.220.233", "104.21.94.77"),
-            "www.otakudesu.blog" to listOf("104.21.76.66", "172.67.190.239", "172.67.220.233", "104.21.94.77"),
             "anichin.ro" to listOf("104.21.76.66", "172.67.190.239"),
             "www.anichin.ro" to listOf("104.21.76.66", "172.67.190.239"),
             "anichin.site" to listOf("104.21.76.66", "172.67.190.239", "104.21.13.75", "172.67.198.201"),
             "dracinema.com" to listOf("104.21.76.66", "172.67.190.239", "172.67.194.112", "104.21.33.253"),
             "themoviebox.online" to listOf("103.224.182.189"),
+            "www.webtoons.com" to listOf("203.104.174.129"),
+            "webtoons.com" to listOf("203.104.174.129"),
+            "webtoon-phinf.pstatic.net" to listOf("23.215.35.157", "23.215.35.166"),
             "i0.wp.com" to listOf("192.0.77.2"),
             "i1.wp.com" to listOf("192.0.77.2"),
             "i2.wp.com" to listOf("192.0.77.2"),
@@ -101,7 +106,9 @@ object ApiClient {
             val isKnownBlockedDomain = cleanHost.contains("samehadaku") ||
                     cleanHost.contains("otakudesu") ||
                     cleanHost.contains("anichin") ||
-                    cleanHost.contains("dracinema")
+                    cleanHost.contains("dracinema") ||
+                    cleanHost.contains("desustream") ||
+                    cleanHost.contains("odcloud")
 
             if (isKnownBlockedDomain) {
                 staticFallbacks[cleanHost]?.let { ips ->

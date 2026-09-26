@@ -172,6 +172,53 @@ fun MangaReaderScreen(
             ) {
                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
             }
+        } else if (pages.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Halaman komik tidak dapat dimuat",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Text(
+                        text = "Pastikan koneksi internet aktif atau coba muat ulang.",
+                        color = TextMuted,
+                        fontSize = 12.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.White)
+                            .clickable {
+                                coroutineScope.launch {
+                                    isLoading = true
+                                    try {
+                                        pages = repository.getMangaPages(currentChapterId)
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    } finally {
+                                        isLoading = false
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Muat Ulang", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         } else {
             // Continuous Vertical Webtoon Scroll
             LazyColumn(

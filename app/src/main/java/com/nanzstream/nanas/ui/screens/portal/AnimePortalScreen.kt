@@ -73,15 +73,16 @@ fun AnimePortalScreen(
     LaunchedEffect(currentTab, selectedDayIndex, refreshTrigger) {
         when (currentTab) {
             AnimeTab.TERBARU -> {
-                if (latestList.isEmpty() || refreshTrigger > 0) {
-                    isLoading = true
-                    try {
-                        latestList = repository.getAnimeLatest(1)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    } finally {
-                        isLoading = false
+                isLoading = latestList.isEmpty()
+                try {
+                    val fresh = repository.getAnimeLatest(1)
+                    if (fresh.isNotEmpty()) {
+                        latestList = fresh
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    isLoading = false
                 }
             }
             AnimeTab.JADWAL -> {
@@ -90,11 +91,11 @@ fun AnimePortalScreen(
                     scheduleList = cached
                     isLoading = false
                 } else {
-                    isLoading = true
+                    isLoading = scheduleList.isEmpty()
                     try {
                         val items = repository.getAnimeSchedule(selectedDayIndex)
-                        scheduleList = items
                         if (items.isNotEmpty()) {
+                            scheduleList = items
                             scheduleCache = scheduleCache + (selectedDayIndex to items)
                         }
                     } catch (e: Exception) {
@@ -105,15 +106,16 @@ fun AnimePortalScreen(
                 }
             }
             AnimeTab.POPULER -> {
-                if (popularList.isEmpty() || refreshTrigger > 0) {
-                    isLoading = true
-                    try {
-                        popularList = repository.getAnimeLatest(2)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    } finally {
-                        isLoading = false
+                isLoading = popularList.isEmpty()
+                try {
+                    val fresh = repository.getAnimeLatest(2)
+                    if (fresh.isNotEmpty()) {
+                        popularList = fresh
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    isLoading = false
                 }
             }
             AnimeTab.SEARCH -> {}

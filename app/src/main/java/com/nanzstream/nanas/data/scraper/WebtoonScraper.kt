@@ -236,19 +236,23 @@ object WebtoonScraper {
             val cleanUrl = effectiveUrl.replace(Regex("""[&?]page=\d+"""), "")
             val separator = if (cleanUrl.contains("?")) "&" else "?"
 
-            for (page in 2..estTotalPages) {
-                try {
-                    val pageHtml = fetchHtml("$cleanUrl${separator}page=$page")
-                    if (pageHtml != null) {
-                        val pageChapters = parseChaptersFromDoc(Jsoup.parse(pageHtml))
-                        for (ch in pageChapters) {
-                            if (!allChapters.any { it.id == ch.id }) {
-                                allChapters.add(ch)
-                            }
+            val deferredPages = (2..estTotalPages).map { page ->
+                async {
+                    try {
+                        fetchHtml("$cleanUrl${separator}page=$page")
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+            }
+            deferredPages.awaitAll().forEach { pageHtml ->
+                if (pageHtml != null) {
+                    val pageChapters = parseChaptersFromDoc(Jsoup.parse(pageHtml))
+                    for (ch in pageChapters) {
+                        if (!allChapters.any { it.id == ch.id }) {
+                            allChapters.add(ch)
                         }
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
             }
         }
@@ -267,7 +271,10 @@ object WebtoonScraper {
     }
 
     suspend fun getPages(viewerUrl: String): List<MangaPageItem> = withContext(Dispatchers.IO) {
-        val html = fetchHtml(viewerUrl, referer = "$BASE_URL/id/") ?: return@withContext emptyList()
+        val cleanUrl = viewerUrl.trim()
+        if (cleanUrl.isBlank()) return@withContext emptyList()
+        val targetUrl = if (cleanUrl.startsWith("http")) cleanUrl else "$BASE_URL$cleanUrl"
+        val html = fetchHtml(targetUrl, referer = "$BASE_URL/id/") ?: return@withContext emptyList()
         val doc = Jsoup.parse(html)
         val pages = mutableListOf<MangaPageItem>()
         val seenUrls = mutableSetOf<String>()
