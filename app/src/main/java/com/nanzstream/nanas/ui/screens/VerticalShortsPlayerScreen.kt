@@ -231,8 +231,16 @@ fun VerticalShortsPlayerScreen(
                     .setReadTimeoutMs(15000)
                     .setDefaultRequestProperties(mapOf("Origin" to "https://www.youtube.com", "Referer" to "https://www.youtube.com/"))
 
-                val audioUrl = res?.audioUrl
-                if (!audioUrl.isNullOrBlank() && audioUrl.startsWith("http")) {
+                val isHls = streamUrl.contains(".m3u8", ignoreCase = true) ||
+                    streamUrl.contains("manifest/hls", ignoreCase = true) ||
+                    streamUrl.contains("hls_variant", ignoreCase = true) ||
+                    streamUrl.contains("hls_playlist", ignoreCase = true)
+
+                if (isHls) {
+                    val hlsSource = HlsMediaSource.Factory(httpFactory)
+                        .createMediaSource(MediaItem.fromUri(streamUrl))
+                    exoPlayer.setMediaSource(hlsSource)
+                } else if (!audioUrl.isNullOrBlank() && audioUrl.startsWith("http")) {
                     // Merging Adaptive Video + AAC Audio
                     val videoSource = ProgressiveMediaSource.Factory(httpFactory)
                         .createMediaSource(MediaItem.fromUri(streamUrl))
@@ -240,10 +248,6 @@ fun VerticalShortsPlayerScreen(
                         .createMediaSource(MediaItem.fromUri(audioUrl))
                     val mergedSource = MergingMediaSource(videoSource, audioSource)
                     exoPlayer.setMediaSource(mergedSource)
-                } else if (streamUrl.contains(".m3u8", ignoreCase = true) || streamUrl.contains("manifest/hls", ignoreCase = true)) {
-                    val hlsSource = HlsMediaSource.Factory(httpFactory)
-                        .createMediaSource(MediaItem.fromUri(streamUrl))
-                    exoPlayer.setMediaSource(hlsSource)
                 } else {
                     val progSource = ProgressiveMediaSource.Factory(httpFactory)
                         .createMediaSource(MediaItem.fromUri(streamUrl))

@@ -8,6 +8,9 @@ import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import com.nanzstream.nanas.data.local.OfflineMangaManager
 import com.nanzstream.nanas.data.local.StorageManager
+import com.nanzstream.nanas.data.remote.ApiClient
+import com.nanzstream.nanas.data.remote.OkHttpNewPipeDownloader
+import org.schabi.newpipe.extractor.NewPipe
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -28,6 +31,12 @@ class NanzStreamApp : Application(), ImageLoaderFactory {
         storage = StorageManager(this)
         offlineManga = OfflineMangaManager(this)
         coil.Coil.setImageLoader(newImageLoader())
+
+        try {
+            NewPipe.init(OkHttpNewPipeDownloader(ApiClient.okHttpClient))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     override fun newImageLoader(): ImageLoader {

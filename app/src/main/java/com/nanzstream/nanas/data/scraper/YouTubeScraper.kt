@@ -8,6 +8,10 @@ import com.nanzstream.nanas.data.model.MediaItem
 import com.nanzstream.nanas.data.model.StreamResult
 import com.nanzstream.nanas.data.model.StreamServerItem
 import com.nanzstream.nanas.data.remote.ApiClient
+import com.nanzstream.nanas.data.remote.OkHttpNewPipeDownloader
+import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.stream.StreamInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -19,6 +23,18 @@ object YouTubeScraper {
     private const val INNERTUBE_API = "https://www.youtube.com/youtubei/v1"
     private const val WEB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     const val IOS_USER_AGENT = "com.google.ios.youtube/21.03.2 (iPhone16,2; U; CPU iOS 18_7_2 like Mac OS X; id_ID)"
+
+    private fun ensureNewPipeInit() {
+        try {
+            NewPipe.getDownloader()
+        } catch (e: Exception) {
+            try {
+                NewPipe.init(OkHttpNewPipeDownloader(ApiClient.okHttpClient))
+            } catch (initEx: Exception) {
+                initEx.printStackTrace()
+            }
+        }
+    }
 
     private fun fixUrl(url: String?): String {
         if (url.isNullOrBlank()) return ""
@@ -540,6 +556,119 @@ object YouTubeScraper {
 
             if (vId.isBlank()) return@withContext null
 
+            // 1. PRIMARY RESOLVER: NewPipeExtractor (decodes JavaScript signature cipher, handles n-throttling & produces valid HLS & progressive streams)
+            try {
+                ensureNewPipeInit()
+                val videoUrl = "https://www.youtube.com/watch?v=$vId"
+                val streamInfo = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
+
+                val title = streamInfo.name?.ifBlank { "YouTube Video" } ?: "YouTube Video"
+                val hlsManifest = streamInfo.hlsUrl
+                val videoStreams = streamInfo.videoStreams.orEmpty()
+                val videoOnlyStreams = streamInfo.videoOnlyStreams.orEmpty()
+                val audioStreams = streamInfo.audioStreams.orEmpty()
+
+                val servers = mutableListOf<StreamServerItem>()
+                val downloadItems = mutableListOf<DownloadItem>()
+
+                // A. Google HLS Multi-Quality is the gold standard (contains synced H.264 video + AAC audio at 720p/480p/360p/240p)
+                if (!hlsManifest.isNullOrBlank() && hlsManifest.startsWith("http")) {
+                    servers.add(
+                        StreamServerItem(
+                            name = "Google HLS Auto (Multi-Quality)",
+                            url = hlsManifest,
+                            isDirectHls = true,
+                            audioUrl = null
+                        )
+                    )
+                }
+
+                // B. Progressive muxed video streams (single MP4 with synced video + audio)
+                videoStreams.forEach { vs ->
+                    val url = vs.content ?: vs.url
+                    if (!url.isNullOrBlank() && url.startsWith("http")) {
+                        val res = vs.resolution ?: "${vs.height}p"
+                        servers.add(
+                            StreamServerItem(
+                                name = "YouTube $res MP4 (Universal)",
+                                url = url,
+                                isDirectHls = false,
+                                audioUrl = null
+                            )
+                        )
+                        downloadItems.add(
+                            DownloadItem(
+                                name = "Video MP4 ($res)",
+                                url = url,
+                                quality = res
+                            )
+                        )
+                    }
+                }
+
+                // C. Best Audio stream for adaptive merging (prefer AAC 128kbps m4a)
+                val bestAudio = audioStreams.find { it.format?.name?.equals("m4a", ignoreCase = true) == true && it.averageBitrate >= 120 }
+                    ?: audioStreams.find { it.format?.name?.equals("m4a", ignoreCase = true) == true }
+                    ?: audioStreams.firstOrNull()
+                val bestAudioUrl = bestAudio?.content ?: bestAudio?.url
+
+                // D. Adaptive video streams (prioritize MP4 / H.264)
+                videoOnlyStreams
+                    .filter { vs -> vs.format?.name?.equals("mp4", ignoreCase = true) == true }
+                    .sortedByDescending { it.height }
+                    .forEach { vs ->
+                        val url = vs.content ?: vs.url
+                        if (!url.isNullOrBlank() && url.startsWith("http")) {
+                            val res = vs.resolution ?: "${vs.height}p"
+                            if (!servers.any { it.name.contains(res) }) {
+                                servers.add(
+                                    StreamServerItem(
+                                        name = "YouTube $res MP4 (Direct)",
+                                        url = url,
+                                        isDirectHls = false,
+                                        audioUrl = bestAudioUrl
+                                    )
+                                )
+                            }
+                            if (!downloadItems.any { it.quality == res }) {
+                                downloadItems.add(
+                                    DownloadItem(
+                                        name = "Video MP4 ($res)",
+                                        url = url,
+                                        quality = res
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                // E. Audio download item
+                if (!bestAudioUrl.isNullOrBlank()) {
+                    downloadItems.add(
+                        DownloadItem(
+                            name = "Audio M4A / AAC",
+                            url = bestAudioUrl,
+                            quality = "${bestAudio?.averageBitrate ?: 128}kbps"
+                        )
+                    )
+                }
+
+                if (servers.isNotEmpty()) {
+                    val primaryServer = servers.first()
+                    return@withContext StreamResult(
+                        title = title,
+                        directHlsUrl = primaryServer.url,
+                        iframePlayerUrl = null,
+                        servers = servers,
+                        downloads = downloadItems,
+                        audioUrl = primaryServer.audioUrl
+                    )
+                }
+            } catch (newPipeEx: Exception) {
+                newPipeEx.printStackTrace()
+            }
+
+            // 2. FALLBACK RESOLVER: Innertube iOS & Web player extraction
             var body = JSONObject().apply {
                 put("context", createIosContext())
                 put("videoId", vId)
@@ -594,9 +723,7 @@ object YouTubeScraper {
                     }
                 }
 
-                // Collect video formats with direct MP4 url
-                // CRITICAL: Filter out AV1 (av01) codec because most Android devices lack AV1 hardware decoder!
-                // Prioritize AVC1 (H.264: itag 137, 136, 135, 134, etc.) supported natively on 100% of Android devices.
+                // Collect video formats with direct MP4 url (AVC1 preferred)
                 for (i in 0 until adaptiveArr.length()) {
                     val af = adaptiveArr.getJSONObject(i)
                     val url = af.optString("url")
@@ -630,7 +757,7 @@ object YouTubeScraper {
                 )
             }
 
-            // Check progressive formats (audio+video in 1 stream, e.g. itag 18=360p, 22=720p)
+            // Check progressive formats (audio+video in 1 stream)
             var directProgressiveUrl: String? = null
             if (progressiveArr != null) {
                 for (i in 0 until progressiveArr.length()) {
@@ -645,7 +772,7 @@ object YouTubeScraper {
 
             val servers = mutableListOf<StreamServerItem>()
 
-            // 1. Google HLS Multi-Quality is the gold standard for YouTube: combines 1080p/720p/480p H.264 + synced AAC audio natively
+            // 1. Google HLS Multi-Quality
             if (!hlsManifest.isNullOrBlank() && hlsManifest.startsWith("http")) {
                 servers.add(
                     StreamServerItem(
@@ -657,7 +784,7 @@ object YouTubeScraper {
                 )
             }
 
-            // 2. Progressive direct MP4 (audio + video in single file)
+            // 2. Progressive direct MP4
             if (!directProgressiveUrl.isNullOrBlank()) {
                 servers.add(
                     StreamServerItem(
@@ -669,7 +796,7 @@ object YouTubeScraper {
                 )
             }
 
-            // 3. Adaptive H.264 MP4 streams (720p, 1080p, 480p, 360p) merged with AAC audio
+            // 3. Adaptive H.264 MP4 streams merged with AAC audio
             videoFormats.sortedWith(
                 compareByDescending<Triple<String, String, Int>> { triple ->
                     val p = Regex("""(\d+)p""").find(triple.first)?.groupValues?.get(1)?.toIntOrNull() ?: 0

@@ -394,10 +394,12 @@ fun VideoPlayerScreen(
                         val audioSource = ProgressiveMediaSource.Factory(dsFactory)
                             .createMediaSource(MediaItem.fromUri(chosenAudioUrl))
 
-                        val mergedSource = MergingMediaSource(true, videoSource, audioSource)
+                        val mergedSource = MergingMediaSource(videoSource, audioSource)
                         exoPlayer.setMediaSource(mergedSource)
                     } else {
-                        val isHls = playableUrl.contains(".m3u8", ignoreCase = true) || playableUrl.contains("hls_variant", ignoreCase = true)
+                        val isHls = playableUrl.contains(".m3u8", ignoreCase = true) ||
+                            playableUrl.contains("hls_variant", ignoreCase = true) ||
+                            playableUrl.contains("hls_playlist", ignoreCase = true)
                         if (isHls) {
                             val mediaItem = MediaItem.Builder()
                                 .setUri(playableUrl)
@@ -407,7 +409,7 @@ fun VideoPlayerScreen(
                             exoPlayer.setMediaSource(hlsSource)
                         } else {
                             val mediaItemBuilder = MediaItem.Builder().setUri(playableUrl)
-                            if (playableUrl.contains(".mpd", ignoreCase = true)) {
+                            if (playableUrl.contains(".mpd", ignoreCase = true) || playableUrl.contains("manifest/dash", ignoreCase = true)) {
                                 mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
                             } else {
                                 mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MP4)
