@@ -349,7 +349,7 @@ fun VideoPlayerScreen(
 
             if (chosenServerUrl.isNotBlank()) {
                 val defaultReferer = when (category) {
-                    CategoryType.ANIME -> "https://desustream.net/"
+                    CategoryType.ANIME -> "https://animasu.love/"
                     CategoryType.DRACHINA -> "https://www.dracinema.com/"
                     CategoryType.MOVIES -> "https://themoviebox.xyz/"
                     CategoryType.YOUTUBE -> "https://www.youtube.com/"

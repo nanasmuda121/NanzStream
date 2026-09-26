@@ -53,9 +53,17 @@ object StreamResolver {
             }
         }
 
-        // 4. Vidhide embed (Used in Otakudesu Anime for direct unblocked HLS)
+        // 4. Vidhide embed (Used in Animasu and Otakudesu Anime for direct unblocked HLS)
         if (cleanUrl.contains("vidhide") || cleanUrl.contains("odvidhide")) {
-            val direct = extractVidhideHls(cleanUrl, if (referer.isNotBlank()) referer else "https://otakudesu.blog/")
+            val direct = extractVidhideHls(cleanUrl, if (referer.isNotBlank()) referer else "https://animasu.love/")
+            if (!direct.isNullOrBlank()) {
+                return@withContext direct
+            }
+        }
+
+        // 5. YourUpload embed (Used in Animasu Anime for direct MP4)
+        if (cleanUrl.contains("yourupload.com")) {
+            val direct = extractYourUploadDirect(cleanUrl, if (referer.isNotBlank()) referer else "https://animasu.love/")
             if (!direct.isNullOrBlank()) {
                 return@withContext direct
             }
@@ -252,6 +260,26 @@ object StreamResolver {
 
             val m3u8Match = Regex("""https?://[^\s"',]+\.m3u8[^\s"',]*""").find(p)
             return@withContext m3u8Match?.value
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        null
+    }
+
+    suspend fun extractYourUploadDirect(url: String, referer: String = "https://animasu.love/"): String? = withContext(Dispatchers.IO) {
+        try {
+            val req = Request.Builder()
+                .url(url)
+                .header("User-Agent", USER_AGENT)
+                .header("Referer", referer)
+                .build()
+            val resp = ApiClient.okHttpClient.newCall(req).execute()
+            val html = resp.body?.string() ?: return@withContext null
+            val fileMatch = Regex("""file:\s*['"]([^'"]+\.mp4[^'"]*)['"]""").find(html)?.groupValues?.get(1)
+                ?: Regex("""property=['"]og:video['"]\s*content=['"]([^'"]+)['"]""").find(html)?.groupValues?.get(1)
+            if (!fileMatch.isNullOrBlank() && fileMatch.startsWith("http")) {
+                return@withContext fileMatch
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }

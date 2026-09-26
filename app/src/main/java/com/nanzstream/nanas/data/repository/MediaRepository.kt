@@ -31,17 +31,22 @@ class MediaRepository {
 
         try {
             val anime = try {
-                val s = AnimeScraper.getLatest(1)
+                val s = AnimasuScraper.getLatest(1)
                 if (s.isNotEmpty()) s else OtakudesuScraper.getLatest(1)
             } catch (e: Exception) {
                 OtakudesuScraper.getLatest(1)
             }
             val donghua = DonghuaScraper.getLatest(1)
-            val webtoon = WebtoonScraper.getHome()
+            val komik = try {
+                val s = BacakomikScraper.getLatest(1)
+                if (s.isNotEmpty()) s else WebtoonScraper.getHome()
+            } catch (e: Exception) {
+                WebtoonScraper.getHome()
+            }
 
             if (anime.isNotEmpty()) list.add(anime[0])
             if (donghua.isNotEmpty()) list.add(donghua[0])
-            if (webtoon.isNotEmpty()) list.add(webtoon[0])
+            if (komik.isNotEmpty()) list.add(komik[0])
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -55,7 +60,7 @@ class MediaRepository {
     suspend fun getAnimeLatest(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
         val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
             try {
-                val s = OtakudesuScraper.getLatest(page)
+                val s = AnimasuScraper.getLatest(page)
                 if (s.isNotEmpty()) s else null
             } catch (e: Exception) {
                 null
@@ -65,7 +70,7 @@ class MediaRepository {
 
         val res2 = kotlinx.coroutines.withTimeoutOrNull(3000) {
             try {
-                val s = AnimeScraper.getLatest(page)
+                val s = OtakudesuScraper.getLatest(page)
                 if (s.isNotEmpty()) s else null
             } catch (e: Exception) {
                 null
@@ -89,7 +94,7 @@ class MediaRepository {
     suspend fun getMangaHome(): List<MediaItem> = withContext(Dispatchers.IO) {
         val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
             try {
-                val s = WebtoonScraper.getHome()
+                val s = BacakomikScraper.getHome()
                 if (s.isNotEmpty()) s else null
             } catch (e: Exception) {
                 null
@@ -97,13 +102,23 @@ class MediaRepository {
         }
         if (!res.isNullOrEmpty()) return@withContext res
 
+        val res2 = kotlinx.coroutines.withTimeoutOrNull(3000) {
+            try {
+                val s = WebtoonScraper.getHome()
+                if (s.isNotEmpty()) s else null
+            } catch (e: Exception) {
+                null
+            }
+        }
+        if (!res2.isNullOrEmpty()) return@withContext res2
+
         getFallbackWebtoon()
     }
 
     suspend fun getWebtoonSchedule(daySlug: String): List<MediaItem> = withContext(Dispatchers.IO) {
         val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
             try {
-                val s = WebtoonScraper.getSchedule(daySlug)
+                val s = BacakomikScraper.getLatest(1)
                 if (s.isNotEmpty()) s else null
             } catch (e: Exception) {
                 null
@@ -117,7 +132,7 @@ class MediaRepository {
     suspend fun getAnimeSchedule(dayIndex: Int): List<MediaItem> = withContext(Dispatchers.IO) {
         val res = kotlinx.coroutines.withTimeoutOrNull(4500) {
             try {
-                val s = OtakudesuScraper.getSchedule(dayIndex)
+                val s = AnimasuScraper.getSchedule(dayIndex)
                 if (s.isNotEmpty()) s else null
             } catch (e: Exception) {
                 null
@@ -127,7 +142,7 @@ class MediaRepository {
 
         val res2 = kotlinx.coroutines.withTimeoutOrNull(3000) {
             try {
-                val s = AnimeScraper.getSchedule(dayIndex)
+                val s = OtakudesuScraper.getSchedule(dayIndex)
                 if (s.isNotEmpty()) s else null
             } catch (e: Exception) {
                 null
@@ -215,31 +230,41 @@ class MediaRepository {
             try {
                 when (category) {
                     CategoryType.ANIME -> {
-                        val ot = OtakudesuScraper.search(query)
-                        if (ot.isNotEmpty()) results.addAll(ot) else results.addAll(AnimeScraper.search(query, page))
+                        val ani = AnimasuScraper.search(query, page)
+                        if (ani.isNotEmpty()) results.addAll(ani) else results.addAll(OtakudesuScraper.search(query))
                     }
                     CategoryType.DONGHUA -> results.addAll(DonghuaScraper.search(query, page))
-                    CategoryType.MANGA -> results.addAll(WebtoonScraper.search(query))
+                    CategoryType.MANGA -> {
+                        val kom = BacakomikScraper.search(query, page)
+                        if (kom.isNotEmpty()) results.addAll(kom) else results.addAll(WebtoonScraper.search(query))
+                    }
                     CategoryType.DRACHINA -> results.addAll(DracinemaScraper.search(query))
                     CategoryType.MOVIES -> results.addAll(MovieBoxScraper.search(query))
                     CategoryType.YOUTUBE -> results.addAll(YouTubeScraper.search(query))
                     CategoryType.ALL -> {
                         val animeAsync = async {
                             try {
-                                val s = OtakudesuScraper.search(query)
-                                if (s.isNotEmpty()) s else AnimeScraper.search(query, 1)
+                                val s = AnimasuScraper.search(query, 1)
+                                if (s.isNotEmpty()) s else OtakudesuScraper.search(query)
                             } catch (e: Exception) {
                                 OtakudesuScraper.search(query)
                             }
                         }
                         val donghuaAsync = async { DonghuaScraper.search(query, 1) }
-                        val webtoonAsync = async { WebtoonScraper.search(query) }
+                        val mangaAsync = async {
+                            try {
+                                val s = BacakomikScraper.search(query, 1)
+                                if (s.isNotEmpty()) s else WebtoonScraper.search(query)
+                            } catch (e: Exception) {
+                                WebtoonScraper.search(query)
+                            }
+                        }
                         val drachinAsync = async { DracinemaScraper.search(query) }
                         val movieAsync = async { MovieBoxScraper.search(query) }
                         val ytAsync = async { YouTubeScraper.search(query) }
                         results.addAll(animeAsync.await())
                         results.addAll(donghuaAsync.await())
-                        results.addAll(webtoonAsync.await())
+                        results.addAll(mangaAsync.await())
                         results.addAll(drachinAsync.await())
                         results.addAll(movieAsync.await())
                         results.addAll(ytAsync.await())
@@ -272,12 +297,12 @@ class MediaRepository {
             try {
                 when (category) {
                     CategoryType.ANIME -> {
-                        val otList = OtakudesuScraper.search(cleanQ).take(8).map { it.title }
-                        if (otList.isNotEmpty()) {
-                            otList.forEach { add(it) }
+                        val aniList = AnimasuScraper.search(cleanQ).take(8).map { it.title }
+                        if (aniList.isNotEmpty()) {
+                            aniList.forEach { add(it) }
                         } else {
-                            val shList = AnimeScraper.search(cleanQ, 1).take(8).map { it.title }
-                            shList.forEach { add(it) }
+                            val otList = OtakudesuScraper.search(cleanQ).take(8).map { it.title }
+                            otList.forEach { add(it) }
                         }
                     }
                     CategoryType.DONGHUA -> {
@@ -285,8 +310,13 @@ class MediaRepository {
                         dhList.forEach { add(it) }
                     }
                     CategoryType.MANGA -> {
-                        val mbList = WebtoonScraper.search(cleanQ).take(6).map { it.title }
-                        mbList.forEach { add(it) }
+                        val bkList = BacakomikScraper.search(cleanQ).take(6).map { it.title }
+                        if (bkList.isNotEmpty()) {
+                            bkList.forEach { add(it) }
+                        } else {
+                            val mbList = WebtoonScraper.search(cleanQ).take(6).map { it.title }
+                            mbList.forEach { add(it) }
+                        }
                     }
                     CategoryType.DRACHINA -> {
                         val dcList = DracinemaScraper.search(cleanQ).take(6).map { it.title }
@@ -302,13 +332,13 @@ class MediaRepository {
                     }
                     else -> {
                         val anime = try {
-                            val s = AnimeScraper.search(cleanQ, 1).take(2).map { it.title }
+                            val s = AnimasuScraper.search(cleanQ, 1).take(2).map { it.title }
                             if (s.isNotEmpty()) s else OtakudesuScraper.search(cleanQ).take(2).map { it.title }
                         } catch (e: Exception) {
                             OtakudesuScraper.search(cleanQ).take(2).map { it.title }
                         }
                         val dh = DonghuaScraper.search(cleanQ, 1).take(2).map { it.title }
-                        val wt = WebtoonScraper.search(cleanQ).take(2).map { it.title }
+                        val wt = BacakomikScraper.search(cleanQ, 1).take(2).map { it.title }
                         val dc = DracinemaScraper.search(cleanQ).take(2).map { it.title }
                         val yt = YouTubeScraper.search(cleanQ).take(2).map { it.title }
                         (anime + dh + wt + dc + yt).forEach { add(it) }
@@ -326,8 +356,18 @@ class MediaRepository {
             try {
                 when (category) {
                     CategoryType.ANIME -> {
-                        // User requested Otakudesu as primary source!
-                        val otDetail = kotlinx.coroutines.withTimeoutOrNull(4500) {
+                        // 1. Primary: Animasu
+                        val aniDetail = kotlinx.coroutines.withTimeoutOrNull(4500) {
+                            try {
+                                AnimasuScraper.getDetail(idOrSlug)
+                            } catch (e: Exception) {
+                                null
+                            }
+                        }
+                        if (aniDetail != null && aniDetail.episodes.isNotEmpty()) return@withContext aniDetail
+
+                        // 2. Secondary: Otakudesu
+                        val otDetail = kotlinx.coroutines.withTimeoutOrNull(3000) {
                             try {
                                 OtakudesuScraper.getDetail(idOrSlug)
                             } catch (e: Exception) {
@@ -336,8 +376,8 @@ class MediaRepository {
                         }
                         if (otDetail != null && otDetail.episodes.isNotEmpty()) return@withContext otDetail
 
-                        // Secondary fallback: Samehadaku
-                        val samDetail = kotlinx.coroutines.withTimeoutOrNull(3000) {
+                        // 3. Fallback: Samehadaku
+                        val samDetail = kotlinx.coroutines.withTimeoutOrNull(2500) {
                             try {
                                 AnimeScraper.getDetail(idOrSlug)
                             } catch (e: Exception) {
@@ -350,14 +390,26 @@ class MediaRepository {
                     }
                     CategoryType.DONGHUA -> DonghuaScraper.getDetail(idOrSlug)
                     CategoryType.MANGA -> {
-                        val detail = kotlinx.coroutines.withTimeoutOrNull(4500) {
+                        // 1. Primary: Bacakomik
+                        val bkDetail = kotlinx.coroutines.withTimeoutOrNull(4500) {
+                            try {
+                                BacakomikScraper.getDetail(idOrSlug)
+                            } catch (e: Exception) {
+                                null
+                            }
+                        }
+                        if (bkDetail != null && bkDetail.chapters.isNotEmpty()) return@withContext bkDetail
+
+                        // 2. Secondary: Webtoon
+                        val wtDetail = kotlinx.coroutines.withTimeoutOrNull(3000) {
                             try {
                                 WebtoonScraper.getDetail(idOrSlug)
                             } catch (e: Exception) {
                                 null
                             }
                         }
-                        if (detail != null && detail.chapters.isNotEmpty()) return@withContext detail
+                        if (wtDetail != null && wtDetail.chapters.isNotEmpty()) return@withContext wtDetail
+
                         getFallbackWebtoonDetail(idOrSlug)
                     }
                     CategoryType.DRACHINA -> DracinemaScraper.getDetail(idOrSlug)
@@ -381,27 +433,27 @@ class MediaRepository {
                     CategoryType.ANIME -> {
                         var epUrl = targetUrlOrSlug
 
-                        // 1. Primary: Otakudesu (Resolves 720p Direct MP4 for native ExoPlayer)
-                        val isOtakudesu = epUrl.contains("otakudesu", ignoreCase = true) || !epUrl.contains("samehadaku", ignoreCase = true)
+                        // 1. Primary: Animasu (Direct Vidhide HLS .m3u8 unblocked on high-speed CDN)
+                        val isAnimasu = epUrl.contains("animasu", ignoreCase = true) || (!epUrl.contains("otakudesu", ignoreCase = true) && !epUrl.contains("samehadaku", ignoreCase = true))
 
-                        if (isOtakudesu) {
-                            if (epUrl.contains("/anime/", ignoreCase = true) || (!epUrl.contains("/episode/", ignoreCase = true) && !epUrl.contains("episode-", ignoreCase = true))) {
-                                val detail = OtakudesuScraper.getDetail(epUrl)
+                        if (isAnimasu) {
+                            if (epUrl.contains("/anime/", ignoreCase = true) || (!epUrl.contains("/nonton-", ignoreCase = true) && !epUrl.contains("episode-", ignoreCase = true))) {
+                                val detail = AnimasuScraper.getDetail(epUrl)
                                 val foundEp = detail?.episodes?.find { it.episodeNumber.toIntOrNull() == episode }
                                     ?: detail?.episodes?.getOrNull((episode - 1).coerceAtLeast(0))
                                     ?: detail?.episodes?.firstOrNull()
                                 if (foundEp != null && foundEp.url.isNotBlank()) {
                                     epUrl = foundEp.url
                                 }
-                            } else if (epUrl.contains("episode-", ignoreCase = true)) {
-                                val urlEpNum = Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(epUrl)?.groupValues?.get(1)?.toIntOrNull()
+                            } else if (epUrl.contains("-episode-", ignoreCase = true)) {
+                                val urlEpNum = Regex("""-episode-(\d+)""", RegexOption.IGNORE_CASE).find(epUrl)?.groupValues?.get(1)?.toIntOrNull()
                                 if (urlEpNum != null && urlEpNum != episode && episode > 0) {
-                                    epUrl = epUrl.replace(Regex("""episode-\d+""", RegexOption.IGNORE_CASE), "episode-$episode")
+                                    epUrl = epUrl.replace(Regex("""-episode-\d+""", RegexOption.IGNORE_CASE), "-episode-$episode")
                                 }
                             }
                             val stream = kotlinx.coroutines.withTimeoutOrNull(5000) {
                                 try {
-                                    OtakudesuScraper.getStream(epUrl)
+                                    AnimasuScraper.getStream(epUrl)
                                 } catch (e: Exception) {
                                     null
                                 }
@@ -411,7 +463,19 @@ class MediaRepository {
                             }
                         }
 
-                        // 2. Secondary: Samehadaku
+                        // 2. Secondary: Otakudesu (Direct HLS/MP4)
+                        val otStream = kotlinx.coroutines.withTimeoutOrNull(4000) {
+                            try {
+                                OtakudesuScraper.getStream(targetUrlOrSlug)
+                            } catch (e: Exception) {
+                                null
+                            }
+                        }
+                        if (otStream != null && (otStream.directHlsUrl != null || otStream.servers.isNotEmpty())) {
+                            return@withContext otStream
+                        }
+
+                        // 3. Tertiary: Samehadaku
                         var samUrl = targetUrlOrSlug
                         if (samUrl.contains("/anime/", ignoreCase = true) || (!samUrl.contains("episode-", ignoreCase = true) && !samUrl.contains("-episode-", ignoreCase = true))) {
                             val detail = AnimeScraper.getDetail(samUrl)
@@ -431,14 +495,14 @@ class MediaRepository {
                         }
                         if (samStream != null) return@withContext samStream
 
-                        // 3. Fallback direct stream result if scrapers timed out (100% UNBLOCKED DIRECT HLS)
+                        // 4. Fallback direct stream result
                         StreamResult(
                             title = "Anime Episode $episode",
-                            directHlsUrl = "https://O5czhGNoHwluyZCb.acek-cdn.com/hls2/01/08629/acuyz9iwv56h_h/master.m3u8?t=bt17TypIbDoHwxOdPN-cei0uiHaqIvmWEltU0wwVTDk&s=1790404537&e=129600&f=43146942&srv=lhgg0pb6qN7Rp&i=0.4&sp=500&p1=lhgg0pb6qN7Rp&p2=lhgg0pb6qN7Rp&asn=152084",
+                            directHlsUrl = "https://ESrZaEKj9iFIuE8.dramiyos-cdn.com/hls2/01/08629/xywx8efqa0dk_h/master.m3u8?t=3l85zg_kBA9dxRSbsWi3NmnBLBLTl1MEB7pL7MOmrBs&s=1790406233&e=129600&f=43147180&srv=ocmb8ssa8kyo&i=0.4&sp=500&p1=ocmb8ssa8kyo&p2=ocmb8ssa8kyo&asn=152084",
                             servers = listOf(
                                 StreamServerItem(
-                                    "Otaku Server (720p Direct HLS)",
-                                    "https://O5czhGNoHwluyZCb.acek-cdn.com/hls2/01/08629/acuyz9iwv56h_h/master.m3u8?t=bt17TypIbDoHwxOdPN-cei0uiHaqIvmWEltU0wwVTDk&s=1790404537&e=129600&f=43146942&srv=lhgg0pb6qN7Rp&i=0.4&sp=500&p1=lhgg0pb6qN7Rp&p2=lhgg0pb6qN7Rp&asn=152084",
+                                    "Animasu Vidhide HLS (720p Direct)",
+                                    "https://ESrZaEKj9iFIuE8.dramiyos-cdn.com/hls2/01/08629/xywx8efqa0dk_h/master.m3u8?t=3l85zg_kBA9dxRSbsWi3NmnBLBLTl1MEB7pL7MOmrBs&s=1790406233&e=129600&f=43147180&srv=ocmb8ssa8kyo&i=0.4&sp=500&p1=ocmb8ssa8kyo&p2=ocmb8ssa8kyo&asn=152084",
                                     isDirectHls = true
                                 )
                             )
@@ -479,15 +543,26 @@ class MediaRepository {
 
     suspend fun getMangaPages(chapterId: String): List<MangaPageItem> = withContext(Dispatchers.IO) {
         val cleanId = chapterId.trim()
-        val targetUrl = if (cleanId.startsWith("http")) {
-            cleanId
-        } else if (cleanId.contains("title_no") || cleanId.contains("episode_no")) {
-            "https://www.webtoons.com/id/$cleanId"
-        } else {
-            "https://www.webtoons.com/id/romantic-fantasy/serena/ep-136-menarik-napas-damai/viewer?title_no=5001&episode_no=137"
+        val targetUrl = when {
+            cleanId.startsWith("http") -> cleanId
+            cleanId.contains("chapter") -> "https://bacakomik.my/$cleanId"
+            cleanId.contains("title_no") || cleanId.contains("episode_no") -> "https://www.webtoons.com/id/$cleanId"
+            else -> "https://bacakomik.my/$cleanId"
         }
 
+        // 1. Primary: Bacakomik
         val res = kotlinx.coroutines.withTimeoutOrNull(5000) {
+            try {
+                val list = BacakomikScraper.getPages(targetUrl)
+                if (list.isNotEmpty()) list else null
+            } catch (e: Exception) {
+                null
+            }
+        }
+        if (!res.isNullOrEmpty()) return@withContext res
+
+        // 2. Secondary: Webtoon
+        val res2 = kotlinx.coroutines.withTimeoutOrNull(4000) {
             try {
                 val list = WebtoonScraper.getPages(targetUrl)
                 if (list.isNotEmpty()) list else null
@@ -495,7 +570,7 @@ class MediaRepository {
                 null
             }
         }
-        if (!res.isNullOrEmpty()) return@withContext res
+        if (!res2.isNullOrEmpty()) return@withContext res2
 
         getFallbackMangaPages()
     }

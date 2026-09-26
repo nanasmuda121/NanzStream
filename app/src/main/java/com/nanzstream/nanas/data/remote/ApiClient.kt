@@ -31,6 +31,14 @@ object ApiClient {
         private val cache = ConcurrentHashMap<String, List<InetAddress>>()
 
         private val staticFallbacks = mapOf(
+            "animasu.love" to listOf("104.21.83.63", "172.67.214.247", "104.21.76.66", "172.67.190.239"),
+            "www.animasu.love" to listOf("104.21.83.63", "172.67.214.247", "104.21.76.66", "172.67.190.239"),
+            "bacakomik.my" to listOf("104.21.32.127", "172.67.151.249", "104.21.76.66", "172.67.190.239"),
+            "www.bacakomik.my" to listOf("104.21.32.127", "172.67.151.249", "104.21.76.66", "172.67.190.239"),
+            "vidhidepro.com" to listOf("104.21.57.125", "172.67.163.224", "104.21.76.66"),
+            "dramiyos-cdn.com" to listOf("104.21.76.66", "172.67.190.239", "203.188.166.68"),
+            "amatipolanyatirudesainnya.lol" to listOf("104.21.8.11", "172.67.156.156"),
+            "bukansiapasiapa.lol" to listOf("104.21.69.230", "172.67.215.109"),
             "otakudesu.blog" to listOf("172.67.220.233", "104.21.94.77", "104.21.76.66", "172.67.190.239"),
             "www.otakudesu.blog" to listOf("172.67.220.233", "104.21.94.77", "104.21.76.66", "172.67.190.239"),
             "odvidhide.com" to listOf("172.67.134.187", "104.21.6.107"),
