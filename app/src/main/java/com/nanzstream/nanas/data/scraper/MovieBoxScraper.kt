@@ -386,7 +386,7 @@ object MovieBoxScraper {
                 val firstUrl = detail.episodes.firstOrNull()?.url ?: ""
                 Regex("""subId=([0-9]+)""").find(firstUrl)?.groupValues?.get(1) ?: detail.id
             }
-            val isMovie = detail.status.contains("Film Layar Lebar") || detail.totalEpisodes == "Full Movie"
+            val isMovie = detail.status?.contains("Film Layar Lebar") == true || detail.totalEpisodes == "Full Movie"
 
             var se = seParam ?: if (isMovie) 0 else 1
             var ep = epParam ?: if (isMovie) 0 else 1

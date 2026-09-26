@@ -230,7 +230,7 @@ fun VerticalShortsPlayerScreen(
                     .setConnectTimeoutMs(15000)
                     .setReadTimeoutMs(15000)
 
-                val audioUrl = res.audioUrl
+                val audioUrl = res?.audioUrl
                 if (!audioUrl.isNullOrBlank() && audioUrl.startsWith("http")) {
                     // Merging Adaptive Video + AAC Audio
                     val videoSource = ProgressiveMediaSource.Factory(httpFactory)
