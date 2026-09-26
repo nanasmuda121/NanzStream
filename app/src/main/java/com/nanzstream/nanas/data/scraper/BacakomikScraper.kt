@@ -8,31 +8,102 @@ import com.nanzstream.nanas.data.model.MediaItem
 import com.nanzstream.nanas.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 object BacakomikScraper {
 
     const val BASE_URL = "https://bacakomik.my"
     private const val USER_AGENT =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+    private val directClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
 
     private suspend fun fetchHtml(url: String, referer: String = "$BASE_URL/"): String? =
         withContext(Dispatchers.IO) {
+            val chromeHeaders = mapOf(
+                "User-Agent" to USER_AGENT,
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language" to "id,en-US;q=0.9,en;q=0.8",
+                "sec-ch-ua" to "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"",
+                "sec-ch-ua-mobile" to "?0",
+                "sec-ch-ua-platform" to "\"Windows\"",
+                "sec-fetch-dest" to "document",
+                "sec-fetch-mode" to "navigate",
+                "sec-fetch-site" to "none",
+                "sec-fetch-user" to "?1",
+                "upgrade-insecure-requests" to "1",
+                "Referer" to referer
+            )
+
+            // 1. Primary: Direct OkHttp client with verified browser headers
             try {
-                val req = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", USER_AGENT)
-                    .header("Referer", referer)
-                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                    .build()
-                val resp = ApiClient.okHttpClient.newCall(req).execute()
-                resp.body?.string()
+                val reqBuilder = Request.Builder().url(url)
+                chromeHeaders.forEach { (k, v) -> reqBuilder.header(k, v) }
+                val resp = directClient.newCall(reqBuilder.build()).execute()
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string()
+                    if (!body.isNullOrBlank() && !body.contains("<title>403 Forbidden</title>", ignoreCase = true) && !body.contains("Access denied", ignoreCase = true)) {
+                        return@withContext body
+                    }
+                }
+            } catch (e: Exception) {
+                // Direct connection failed, fall through to resilient DoH client
+            }
+
+            // 2. Secondary: ApiClient.okHttpClient (DoH / anti-censorship resilient DNS)
+            try {
+                val reqBuilder = Request.Builder().url(url)
+                chromeHeaders.forEach { (k, v) -> reqBuilder.header(k, v) }
+                val resp = ApiClient.okHttpClient.newCall(reqBuilder.build()).execute()
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string()
+                    if (!body.isNullOrBlank() && !body.contains("<title>403 Forbidden</title>", ignoreCase = true) && !body.contains("Access denied", ignoreCase = true)) {
+                        return@withContext body
+                    }
+                }
+            } catch (e: Exception) {
+                // Resilient connection failed, fall through to mobile headers attempt
+            }
+
+            // 3. Fallback: Mobile Chrome User-Agent
+            try {
+                val mobileHeaders = mapOf(
+                    "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    "Accept-Language" to "id,en-US;q=0.9,en;q=0.8",
+                    "sec-ch-ua" to "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"",
+                    "sec-ch-ua-mobile" to "?1",
+                    "sec-ch-ua-platform" to "\"Android\"",
+                    "sec-fetch-dest" to "document",
+                    "sec-fetch-mode" to "navigate",
+                    "sec-fetch-site" to "none",
+                    "sec-fetch-user" to "?1",
+                    "upgrade-insecure-requests" to "1",
+                    "Referer" to referer
+                )
+                val reqBuilder = Request.Builder().url(url)
+                mobileHeaders.forEach { (k, v) -> reqBuilder.header(k, v) }
+                val resp = directClient.newCall(reqBuilder.build()).execute()
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string()
+                    if (!body.isNullOrBlank() && !body.contains("<title>403 Forbidden</title>", ignoreCase = true) && !body.contains("Access denied", ignoreCase = true)) {
+                        return@withContext body
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
-                null
             }
+
+            null
         }
 
     /**
@@ -281,9 +352,26 @@ object BacakomikScraper {
      * Get chapter reader images
      */
     suspend fun getPages(chapterUrl: String): List<MangaPageItem> = withContext(Dispatchers.IO) {
-        val html = fetchHtml(chapterUrl) ?: return@withContext emptyList()
+        val cleanUrl = chapterUrl.trim().let { if (it.endsWith("/")) it else "$it/" }
+        val html = fetchHtml(cleanUrl) ?: return@withContext emptyList()
         val doc = Jsoup.parse(html)
         val pages = mutableListOf<String>()
+
+        // 1. User verified selector & attribute priority
+        val userImgs = doc.select("#chimg-auh img, .chapter-content img, .chapter-area img")
+        for (img in userImgs) {
+            val src = img.attr("data-lazy-src").ifEmpty {
+                img.attr("data-src").ifEmpty {
+                    img.attr("src")
+                }
+            }.trim()
+
+            if (src.isNotEmpty() && !src.startsWith("data:") && !pages.contains(src)) {
+                if (!src.contains("blank.gif") && !src.contains("placeholder") && !src.contains("ikon") && !src.contains("logo")) {
+                    pages.add(src)
+                }
+            }
+        }
 
         fun extractCandidate(img: org.jsoup.nodes.Element): String {
             val candidates = listOf(

@@ -9,16 +9,26 @@ import android.os.Build
 import com.nanzstream.nanas.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 
 object WebtoonBitmapDecoder {
 
     private const val MAX_SLICE_HEIGHT = 2048
+
+    private val directImageClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
 
     private fun md5(str: String): String {
         val md = MessageDigest.getInstance("MD5")
@@ -60,29 +70,65 @@ object WebtoonBitmapDecoder {
                 if (cachedSlices.isNotEmpty()) return@withContext cachedSlices
             }
 
-            // 3. Download via ApiClient OkHttpClient
+            // 3. Download via direct OkHttpClient or ApiClient OkHttpClient
             val referer = when {
                 cleanUrl.contains("animasu") -> "https://animasu.love/"
                 cleanUrl.contains("bacakomik") || cleanUrl.contains(".lol") || cleanUrl.contains(".lat") || cleanUrl.contains(".pics") -> "https://bacakomik.my/"
                 else -> "https://bacakomik.my/"
             }
 
-            val req = Request.Builder()
-                .url(cleanUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                .header("Referer", referer)
-                .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-                .build()
+            val chromeImageHeaders = mapOf(
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Referer" to referer,
+                "Accept" to "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                "Accept-Language" to "id,en-US;q=0.9,en;q=0.8",
+                "sec-ch-ua" to "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"",
+                "sec-ch-ua-mobile" to "?0",
+                "sec-ch-ua-platform" to "\"Windows\"",
+                "sec-fetch-dest" to "image",
+                "sec-fetch-mode" to "no-cors",
+                "sec-fetch-site" to "cross-site"
+            )
 
-            val resp = ApiClient.okHttpClient.newCall(req).execute()
-            if (!resp.isSuccessful || resp.body == null) {
+            var resp: Response? = null
+            try {
+                val reqBuilder = Request.Builder().url(cleanUrl)
+                chromeImageHeaders.forEach { (k, v) -> reqBuilder.header(k, v) }
+                val directResp = directImageClient.newCall(reqBuilder.build()).execute()
+                if (directResp.isSuccessful && directResp.body != null) {
+                    resp = directResp
+                } else {
+                    directResp.close()
+                }
+            } catch (e: Exception) {
+                // direct failed
+            }
+
+            if (resp == null) {
+                try {
+                    val reqBuilder = Request.Builder().url(cleanUrl)
+                    chromeImageHeaders.forEach { (k, v) -> reqBuilder.header(k, v) }
+                    val fallbackResp = ApiClient.okHttpClient.newCall(reqBuilder.build()).execute()
+                    if (fallbackResp.isSuccessful && fallbackResp.body != null) {
+                        resp = fallbackResp
+                    } else {
+                        fallbackResp.close()
+                    }
+                } catch (e: Exception) {
+                    // fallback failed
+                }
+            }
+
+            if (resp == null || !resp.isSuccessful || resp.body == null) {
                 return@withContext emptyList()
             }
 
             val tempFile = File(cacheDir, cacheFile.name + ".tmp")
-            resp.body!!.byteStream().use { input ->
-                tempFile.outputStream().use { output ->
-                    input.copyTo(output)
+            resp.use { r ->
+                r.body!!.byteStream().use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
                 }
             }
 

@@ -120,18 +120,7 @@ object ApiClient {
                 }
             }
 
-            // 2. Bacakomik image hosts (*.lol, *.lat, *.pics, bacakomik.my)
-            // Route directly to Cloudflare edge IPs at 0ms, bypassing Indonesian ISP DNS blocks
-            if (cleanHost.endsWith(".lol") || cleanHost.endsWith(".lat") || cleanHost.endsWith(".pics") || cleanHost.contains("bacakomik")) {
-                val cfIps = listOf("104.21.76.66", "172.67.190.239", "104.21.50.252", "172.67.215.119", "104.21.8.11", "172.67.156.156")
-                val addrs = cfIps.mapNotNull { createAddress(cleanHost, it) }
-                if (addrs.isNotEmpty()) {
-                    cache[cleanHost] = addrs
-                    return addrs
-                }
-            }
-
-            // 3. Instant Static Fallbacks (0ms lookup, guaranteed anti-blocking for media & CDN domains)
+            // 2. Instant Static Fallbacks (0ms lookup, guaranteed anti-blocking for media & CDN domains)
             val matchedIps = staticFallbacks[cleanHost]
                 ?: staticFallbacks.entries.firstOrNull { cleanHost == it.key || cleanHost.endsWith("." + it.key) }?.value
 
@@ -140,6 +129,16 @@ object ApiClient {
                 if (staticAddrs.isNotEmpty()) {
                     cache[cleanHost] = staticAddrs
                     return staticAddrs
+                }
+            }
+
+            // 3. Generic Cloudflare edge IPs fallback for image hosts (*.lol, *.lat, *.pics)
+            if (cleanHost.endsWith(".lol") || cleanHost.endsWith(".lat") || cleanHost.endsWith(".pics")) {
+                val cfIps = listOf("104.21.10.207", "172.67.190.254", "104.21.50.252", "172.67.215.119", "104.21.30.204", "172.67.173.220", "104.21.76.66", "172.67.190.239")
+                val addrs = cfIps.mapNotNull { createAddress(cleanHost, it) }
+                if (addrs.isNotEmpty()) {
+                    cache[cleanHost] = addrs
+                    return addrs
                 }
             }
 
