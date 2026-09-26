@@ -269,9 +269,11 @@ object DonghuaScraper {
 
             if (src.isNotBlank() && !isBlockedOrDead(src)) {
                 if (src.contains("ok.ru/videoembed/")) {
-                    val direct = StreamResolver.extractOkRuDirect(src, "https://anichin.ro/")
-                    if (!direct.isNullOrBlank() && !servers.any { it.url == direct }) {
-                        servers.add(StreamServerItem("Anichin OK.ru (Direct MP4)", direct, isDirectHls = true))
+                    val streamList = StreamResolver.extractOkRuStreams(src, "https://anichin.ro/")
+                    for ((label, streamUrl) in streamList) {
+                        if (!servers.any { it.url == streamUrl }) {
+                            servers.add(StreamServerItem("Anichin $label", streamUrl, isDirectHls = true))
+                        }
                     }
                 }
                 if (!servers.any { it.url == src }) {
@@ -297,11 +299,13 @@ object DonghuaScraper {
                     iframeUrl = iframeUrl?.replace("&#038;", "&")?.replace("&amp;", "&")
 
                     if (!iframeUrl.isNullOrEmpty() && !isBlockedOrDead(iframeUrl)) {
-                        // Check if it's OK.ru and extract direct stream
+                        // Check if it's OK.ru and extract direct streams (HD & SD)
                         if (iframeUrl.contains("ok.ru/videoembed/")) {
-                            val okDirect = StreamResolver.extractOkRuDirect(iframeUrl, "https://anichin.ro/")
-                            if (!okDirect.isNullOrBlank() && !servers.any { it.url == okDirect }) {
-                                servers.add(StreamServerItem("Anichin OK.ru (Direct MP4)", okDirect, isDirectHls = true))
+                            val streamList = StreamResolver.extractOkRuStreams(iframeUrl, "https://anichin.ro/")
+                            for ((label, streamUrl) in streamList) {
+                                if (!servers.any { it.url == streamUrl }) {
+                                    servers.add(StreamServerItem("Anichin $label", streamUrl, isDirectHls = true))
+                                }
                             }
                         }
 
@@ -325,18 +329,12 @@ object DonghuaScraper {
             }
         }
 
-        // Prioritize reliable players first (Direct HLS first, then Dailymotion, Blogger, OK.ru, others)
+        // Prioritize reliable direct players first (HD first, then SD anti-lag, then TurboVIP, etc.)
         val sortedServers = servers.sortedWith(
-            compareBy<StreamServerItem> { item ->
-                when {
-                    item.isDirectHls -> 0
-                    item.url.contains("dailymotion.com") || item.name.contains("Dailymotion", ignoreCase = true) -> 1
-                    item.url.contains("blogger.com") -> 2
-                    item.url.contains("ok.ru") -> 3
-                    item.url.contains("rumble.com") -> 4
-                    else -> 5
-                }
-            }
+            compareBy<StreamServerItem>(
+                { if (it.isDirectHls) 0 else 1 },
+                { if (it.name.contains("720p", ignoreCase = true) || it.name.contains("HD", ignoreCase = true)) 0 else if (it.name.contains("480p", ignoreCase = true) || it.name.contains("SD", ignoreCase = true)) 1 else 2 }
+            )
         )
 
         val directStream = sortedServers.firstOrNull { it.isDirectHls }?.url

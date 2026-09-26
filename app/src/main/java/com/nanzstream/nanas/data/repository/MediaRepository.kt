@@ -84,7 +84,7 @@ class MediaRepository {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        getMangaHome()
+        getFallbackWebtoonSchedule(daySlug)
     }
 
     suspend fun getAnimeSchedule(dayIndex: Int): List<MediaItem> = withContext(Dispatchers.IO) {
@@ -94,7 +94,7 @@ class MediaRepository {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        OtakudesuScraper.getSchedule(dayIndex)
+        getFallbackAnimeSchedule(dayIndex)
     }
 
     suspend fun getDonghuaSchedule(dayIndex: Int): List<MediaItem> = withContext(Dispatchers.IO) {
@@ -104,7 +104,7 @@ class MediaRepository {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        DonghuaScraper.getSchedule(dayIndex)
+        getFallbackDonghuaSchedule(dayIndex)
     }
 
     suspend fun getLiveTvChannels(): List<LiveTvChannelItem> = withContext(Dispatchers.IO) {
@@ -375,6 +375,37 @@ class MediaRepository {
     private fun getFallbackWebtoon(): List<MediaItem> = listOf(
         MediaItem("4834", "The Greatest Estate Developer", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20250205_17/1738719483097MIbul_JPEG/4834.jpg?type=q90", "https://www.webtoons.com/id/fantasy/the-greatest-estate-developer/list?title_no=4834", "4834", "Webtoon")
     )
+
+    private fun getFallbackAnimeSchedule(dayIndex: Int): List<MediaItem> {
+        val days = listOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+        val d = days.getOrElse(dayIndex) { "Senin" }
+        return listOf(
+            MediaItem("fb_ani_1", "World Is Dancing", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/06/158709.jpg", "https://otakudesu.blog/anime/world-is-dancing-sub-indo/", "https://otakudesu.blog/anime/world-is-dancing-sub-indo/", "$d • Ep 12"),
+            MediaItem("fb_ani_2", "Grand Blue Season 3", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/06/158709.jpg", "https://otakudesu.blog/anime/grand-blue-s3-sub-indo/", "https://otakudesu.blog/anime/grand-blue-s3-sub-indo/", "$d • Ep 10"),
+            MediaItem("fb_ani_3", "One Piece", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2021/05/One-Piece-Sub-Indo.jpg", "https://otakudesu.blog/anime/1piece-sub-indo/", "https://otakudesu.blog/anime/1piece-sub-indo/", "$d • Ep 1179"),
+            MediaItem("fb_ani_4", "Dr. Stone Science Future", CategoryType.ANIME, "https://otakudesu.blog/wp-content/uploads/2026/07/Gaikotsu-Kishi-sama-Tadaima-Isekai-e-Odekakechuu-Season-2-Sub-Indo.jpg", "https://otakudesu.blog/anime/ds-future-part3-sub-indo/", "https://otakudesu.blog/anime/ds-future-part3-sub-indo/", "$d • Ep 6")
+        )
+    }
+
+    private fun getFallbackDonghuaSchedule(dayIndex: Int): List<MediaItem> {
+        val days = listOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+        val d = days.getOrElse(dayIndex) { "Senin" }
+        return listOf(
+            MediaItem("fb_dh_1", "Lord of the Ancient God Grave", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2026/02/Lord-of-the-Ancient-God-Grave-Subtitle-Indonesia.webp", "https://anichin.ro/lord-of-the-ancient-god-grave-episode-485-subtitle-indonesia/", "lord-of-the-ancient-god-grave", "$d • Ep 485"),
+            MediaItem("fb_dh_2", "Battle Through the Heavens Season 5", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2026/02/BTTH-Season-5-Subtitle-Indonesia.webp", "https://anichin.ro/battle-through-the-heavens-season-5-subtitle-indonesia/", "btth-season-5", "$d • Ep 128"),
+            MediaItem("fb_dh_3", "Renegade Immortal (Xian Ni)", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2026/02/Renegade-Immortal-Subtitle-Indonesia-2.webp", "https://anichin.ro/renegade-immortal-subtitle-indonesia/", "renegade-immortal", "$d • Ep 76"),
+            MediaItem("fb_dh_4", "The Great Ruler 3D", CategoryType.DONGHUA, "https://anichin.ro/wp-content/uploads/2026/02/The-Great-Ruler-3D-Subtitle-Indonesia.webp", "https://anichin.ro/the-great-ruler-subtitle-indonesia/", "the-great-ruler", "$d • Ep 82")
+        )
+    }
+
+    private fun getFallbackWebtoonSchedule(daySlug: String): List<MediaItem> {
+        return listOf(
+            MediaItem("5001", "Serena", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20260804_80/1785821073225nPwjs_JPEG/4Thumb_Poster.jpg?type=q90", "https://www.webtoons.com/id/romantic-fantasy/serena/list?title_no=5001", "5001", "Webtoon"),
+            MediaItem("11152", "The Corrupt Tyrant’s Obsession", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20260903_139/1788413418613Asfyr_JPEG/9Thumb_Poster.jpg?type=q90", "https://www.webtoons.com/id/romantic-fantasy/the-corrupt-tyrants-obession/list?title_no=11152", "11152", "Webtoon"),
+            MediaItem("3085", "WEE!!!", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20250828_293/1756373680374gUKf3_JPEG/Thumb_Poster.jpg?type=q90", "https://www.webtoons.com/id/slice-of-life/wee/list?title_no=3085", "3085", "Webtoon"),
+            MediaItem("4834", "The Greatest Estate Developer", CategoryType.MANGA, "https://webtoon-phinf.pstatic.net/20250205_17/1738719483097MIbul_JPEG/4834.jpg?type=q90", "https://www.webtoons.com/id/fantasy/the-greatest-estate-developer/list?title_no=4834", "4834", "Webtoon")
+        )
+    }
 
     private fun getFallbackLiveTv(): List<LiveTvChannelItem> = listOf(
         LiveTvChannelItem("210", "Trans TV", 800, "TV Nasional", "https://servicebuss.transvision.co.id/uploads/channel/logo/210.png", slug = "210-trans-tv"),

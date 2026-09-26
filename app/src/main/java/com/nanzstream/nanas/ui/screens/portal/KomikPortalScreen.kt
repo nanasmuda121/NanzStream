@@ -1,5 +1,6 @@
 package com.nanzstream.nanas.ui.screens.portal
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -73,12 +74,13 @@ fun KomikPortalScreen(
     var searchSuggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
     val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(currentTab, selectedDayIndex) {
+    LaunchedEffect(currentTab, selectedDayIndex, refreshTrigger) {
         if (currentTab == KomikTab.JADWAL) {
             val cached = scheduleCache[selectedDayIndex]
-            if (cached != null && cached.isNotEmpty()) {
+            if (cached != null && cached.isNotEmpty() && refreshTrigger == 0) {
                 komikList = cached
             } else {
                 isLoading = true
@@ -86,7 +88,9 @@ fun KomikPortalScreen(
                     val daySlug = SCHEDULE_DAYS[selectedDayIndex].webtoonSlug
                     val items = repository.getWebtoonSchedule(daySlug)
                     komikList = items
-                    scheduleCache = scheduleCache + (selectedDayIndex to items)
+                    if (items.isNotEmpty()) {
+                        scheduleCache = scheduleCache + (selectedDayIndex to items)
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
@@ -263,6 +267,32 @@ fun KomikPortalScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
+                            }
+                        } else if (!isLoading && komikList.isEmpty()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "Gagal memuat jadwal komik",
+                                    color = TextMuted,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = { refreshTrigger++ },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = SurfaceElevated,
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(100.dp),
+                                    border = BorderStroke(1.dp, GlassBorder)
+                                ) {
+                                    Text("Coba Lagi", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         } else {
                             LazyVerticalGrid(

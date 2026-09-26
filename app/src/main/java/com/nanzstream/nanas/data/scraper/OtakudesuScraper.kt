@@ -229,17 +229,72 @@ object OtakudesuScraper {
         )
     }
 
+    private val weeklyScheduleCache = java.util.concurrent.ConcurrentHashMap<Int, List<MediaItem>>()
+
     suspend fun getSchedule(dayIndex: Int): List<MediaItem> = withContext(Dispatchers.IO) {
         val dayNames = listOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
         val targetDay = dayNames.getOrElse(dayIndex) { "Senin" }
 
+        // 1. Check memory cache first
+        weeklyScheduleCache[dayIndex]?.let {
+            if (it.isNotEmpty()) return@withContext it
+        }
+
+        // 2. Fetch official Jadwal Rilis page (fast & complete)
         try {
-            // Ongoing anime pages on Otakudesu specify the day name in .epztipe
+            val html = fetchHtml("$BASE_URL/jadwal-rilis/")
+            if (!html.isNullOrBlank()) {
+                val doc = Jsoup.parse(html)
+                val dayMap = mutableMapOf<Int, MutableList<MediaItem>>()
+                (0..6).forEach { dayMap[it] = mutableListOf() }
+
+                doc.select(".kglist321").forEach { block ->
+                    val header = block.selectFirst("h2")?.text()?.trim() ?: ""
+                    val matchedDayIdx = dayNames.indexOfFirst { header.contains(it, ignoreCase = true) }
+                    if (matchedDayIdx != -1) {
+                        val currentDayName = dayNames[matchedDayIdx]
+                        block.select("ul li a").forEach { a ->
+                            val href = a.attr("href").trim()
+                            val title = a.text().trim()
+                            if (href.startsWith("http") && title.isNotBlank()) {
+                                dayMap[matchedDayIdx]?.add(
+                                    MediaItem(
+                                        id = href,
+                                        title = title,
+                                        category = CategoryType.ANIME,
+                                        thumbnail = "", // Cached/updated or fallback
+                                        url = href,
+                                        slug = href,
+                                        badge = "$currentDayName • Ongoing"
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Cache all days in memory
+                dayMap.forEach { (idx, list) ->
+                    if (list.isNotEmpty()) {
+                        weeklyScheduleCache[idx] = list
+                    }
+                }
+
+                val result = dayMap[dayIndex].orEmpty()
+                if (result.isNotEmpty()) {
+                    return@withContext result
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 3. Fallback: parse from ongoing anime page
+        try {
             val p1 = getLatest(1)
-            val p2 = getLatest(2)
-            val combined = (p1 + p2).distinctBy { it.title }
-            val dayItems = combined.filter { it.badge?.contains(targetDay, ignoreCase = true) == true }
+            val dayItems = p1.filter { it.badge?.contains(targetDay, ignoreCase = true) == true }
             if (dayItems.isNotEmpty()) {
+                weeklyScheduleCache[dayIndex] = dayItems
                 return@withContext dayItems
             }
         } catch (e: Exception) {
@@ -348,12 +403,13 @@ object OtakudesuScraper {
             }
         }
 
-        // 2. Dynamic mirrors from .mirrorstream (Archive.org direct MP4, Filedon, VidHide, Mega)
-        try {
-            val dataContents = doc.select(".mirrorstream a[data-content]")
-            if (dataContents.isNotEmpty()) {
-                val nonceJson = postAjax(mapOf("action" to "aa1208d27f29ca340c92c66d1926f13f"))
-                val nonce = nonceJson?.let { JSONObject(it).optString("data") }
+        // 2. Dynamic mirrors from .mirrorstream: only query if directMp4 is not yet discovered from primary iframe
+        if (directMp4 == null) {
+            try {
+                val dataContents = doc.select(".mirrorstream a[data-content]").take(2)
+                if (dataContents.isNotEmpty()) {
+                    val nonceJson = postAjax(mapOf("action" to "aa1208d27f29ca340c92c66d1926f13f"))
+                    val nonce = nonceJson?.let { JSONObject(it).optString("data") }
                 if (!nonce.isNullOrBlank()) {
                     for (el in dataContents) {
                         try {
@@ -412,6 +468,7 @@ object OtakudesuScraper {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
 
         // 3. Fallback to download links if needed
         doc.select(".download ul li a").forEach { a ->

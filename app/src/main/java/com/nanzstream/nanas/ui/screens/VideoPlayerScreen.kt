@@ -184,15 +184,15 @@ fun VideoPlayerScreen(
             .setReadTimeoutMs(25_000)
             .setAllowCrossProtocolRedirects(true)
 
-        // Resilient buffer control: fast startup (1s) and auto-recovery on network drops without freezing
+        // Resilient buffer control: 30s min buffer, 90s max buffer, instant startup (1s), smooth recovery without stuttering
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 15_000,
-                /* maxBufferMs = */ 50_000,
+                /* minBufferMs = */ 30_000,
+                /* maxBufferMs = */ 90_000,
                 /* bufferForPlaybackMs = */ 1_000,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_500
+                /* bufferForPlaybackAfterRebufferMs = */ 3_500
             )
-            .setPrioritizeTimeOverSizeThresholds(false)
+            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
@@ -366,7 +366,6 @@ fun VideoPlayerScreen(
                     } else {
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                     }
-                    val dsHeaders = mutableMapOf<String, String>()
                     if (category == CategoryType.MOVIES || playableUrl.contains("hakunaymatata.com", ignoreCase = true) || playableUrl.contains("aoneroom.com", ignoreCase = true)) {
                         dsHeaders["Referer"] = "https://themoviebox.xyz/"
                         dsHeaders["Origin"] = "https://themoviebox.xyz"
@@ -375,6 +374,16 @@ fun VideoPlayerScreen(
                         dsHeaders["Origin"] = "https://www.youtube.com"
                     } else if (defaultReferer.isNotBlank()) {
                         dsHeaders["Referer"] = defaultReferer
+                    }
+
+                    // CRITICAL ANTI-LAG FIX: VK/OK.ru CDN (vkuser.net) and Otakudesu CDN (odcloud.net)
+                    // strictly reject requests with foreign cross-origin Referers (returns HTTP 400 Bad Request)!
+                    val isVkOrOkRu = playableUrl.contains("vkuser.net", ignoreCase = true) ||
+                            playableUrl.contains("ok.ru", ignoreCase = true)
+                    val isOdCloud = playableUrl.contains("odcloud.net", ignoreCase = true)
+                    if (isVkOrOkRu || isOdCloud) {
+                        dsHeaders.remove("Referer")
+                        dsHeaders.remove("Origin")
                     }
 
                     val dsFactory = DefaultHttpDataSource.Factory()

@@ -47,8 +47,11 @@ object WebtoonScraper {
             }
         }
 
+    private val scheduleCache = java.util.concurrent.ConcurrentHashMap<String, List<MediaItem>>()
+
     suspend fun getHome(): List<MediaItem> = withContext(Dispatchers.IO) {
-        val html = fetchHtml("$BASE_URL/id/dailySchedule") ?: return@withContext emptyList()
+        scheduleCache["home"]?.let { if (it.isNotEmpty()) return@withContext it }
+        val html = fetchHtml("$BASE_URL/id/originals") ?: fetchHtml("$BASE_URL/id/dailySchedule") ?: return@withContext emptyList()
         val doc = Jsoup.parse(html)
         val items = mutableListOf<MediaItem>()
 
@@ -59,9 +62,10 @@ object WebtoonScraper {
             }
             if (titleNo.isEmpty() || items.any { it.id == titleNo }) return@forEach
 
-            val title = a.selectFirst("strong.title")?.text()?.trim()
-                ?: a.selectFirst(".subj")?.text()?.trim() ?: ""
-            val img = a.selectFirst("img")?.attr("src") ?: ""
+            val title = a.selectFirst("strong.title, .subj, .title, p.title")?.text()?.trim() ?: ""
+            val img = a.selectFirst("img")?.let {
+                it.attr("src").ifBlank { it.attr("data-url") }.ifBlank { it.attr("data-src") }
+            } ?: ""
             val genre = a.selectFirst(".genre")?.text()?.trim() ?: "Webtoon"
             val badge = a.selectFirst(".badge_up2")?.text()?.trim() ?: genre
 
@@ -81,11 +85,17 @@ object WebtoonScraper {
                 )
             }
         }
+        if (items.isNotEmpty()) {
+            scheduleCache["home"] = items
+        }
         items
     }
 
     suspend fun getSchedule(daySlug: String): List<MediaItem> = withContext(Dispatchers.IO) {
-        val targetUrl = "$BASE_URL/id/originals/$daySlug"
+        val cleanSlug = daySlug.lowercase().trim()
+        scheduleCache[cleanSlug]?.let { if (it.isNotEmpty()) return@withContext it }
+
+        val targetUrl = "$BASE_URL/id/originals/$cleanSlug"
         val html = fetchHtml(targetUrl) ?: return@withContext getHome()
         val doc = Jsoup.parse(html)
         val items = mutableListOf<MediaItem>()
@@ -97,9 +107,10 @@ object WebtoonScraper {
             }
             if (titleNo.isEmpty() || items.any { it.id == titleNo }) return@forEach
 
-            val title = a.selectFirst("strong.title")?.text()?.trim()
-                ?: a.selectFirst(".subj")?.text()?.trim() ?: ""
-            val img = a.selectFirst("img")?.attr("src") ?: ""
+            val title = a.selectFirst("strong.title, .subj, .title, p.title")?.text()?.trim() ?: ""
+            val img = a.selectFirst("img")?.let {
+                it.attr("src").ifBlank { it.attr("data-url") }.ifBlank { it.attr("data-src") }
+            } ?: ""
             val genre = a.selectFirst(".genre")?.text()?.trim() ?: "Webtoon"
             val badge = a.selectFirst(".badge_up2")?.text()?.trim() ?: genre
 
@@ -119,7 +130,11 @@ object WebtoonScraper {
                 )
             }
         }
-        if (items.isEmpty()) getHome() else items
+        val result = if (items.isEmpty()) getHome() else items
+        if (result.isNotEmpty()) {
+            scheduleCache[cleanSlug] = result
+        }
+        result
     }
 
     suspend fun search(query: String): List<MediaItem> = withContext(Dispatchers.IO) {

@@ -1,5 +1,6 @@
 package com.nanzstream.nanas.ui.screens.portal
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -58,6 +59,7 @@ fun AnimePortalScreen(
     var currentTab by remember { mutableStateOf(AnimeTab.TERBARU) }
     val todayIndex = remember { getTodayScheduleIndex() }
     var selectedDayIndex by remember { mutableIntStateOf(todayIndex) }
+    var scheduleCache by remember { mutableStateOf<Map<Int, List<MediaItem>>>(emptyMap()) }
     var scheduleList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var latestList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var popularList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
@@ -65,12 +67,13 @@ fun AnimePortalScreen(
     var searchSuggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
     val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(currentTab, selectedDayIndex) {
+    LaunchedEffect(currentTab, selectedDayIndex, refreshTrigger) {
         when (currentTab) {
             AnimeTab.TERBARU -> {
-                if (latestList.isEmpty()) {
+                if (latestList.isEmpty() || refreshTrigger > 0) {
                     isLoading = true
                     try {
                         latestList = repository.getAnimeLatest(1)
@@ -82,17 +85,26 @@ fun AnimePortalScreen(
                 }
             }
             AnimeTab.JADWAL -> {
-                isLoading = true
-                try {
-                    scheduleList = repository.getAnimeSchedule(selectedDayIndex)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                } finally {
-                    isLoading = false
+                val cached = scheduleCache[selectedDayIndex]
+                if (cached != null && cached.isNotEmpty() && refreshTrigger == 0) {
+                    scheduleList = cached
+                } else {
+                    isLoading = true
+                    try {
+                        val items = repository.getAnimeSchedule(selectedDayIndex)
+                        scheduleList = items
+                        if (items.isNotEmpty()) {
+                            scheduleCache = scheduleCache + (selectedDayIndex to items)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        isLoading = false
+                    }
                 }
             }
             AnimeTab.POPULER -> {
-                if (popularList.isEmpty()) {
+                if (popularList.isEmpty() || refreshTrigger > 0) {
                     isLoading = true
                     try {
                         popularList = repository.getAnimeLatest(2)
@@ -269,6 +281,32 @@ fun AnimePortalScreen(
                         ) {
                             CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
                         }
+                    } else if (!isLoading && displayItems.isEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "Gagal memuat daftar anime",
+                                color = TextMuted,
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = { refreshTrigger++ },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = SurfaceElevated,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(100.dp),
+                                border = BorderStroke(1.dp, GlassBorder)
+                            ) {
+                                Text("Coba Lagi", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     } else {
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(3),
@@ -304,6 +342,32 @@ fun AnimePortalScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
+                            }
+                        } else if (!isLoading && scheduleList.isEmpty()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "Gagal memuat jadwal anime",
+                                    color = TextMuted,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = { refreshTrigger++ },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = SurfaceElevated,
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(100.dp),
+                                    border = BorderStroke(1.dp, GlassBorder)
+                                ) {
+                                    Text("Coba Lagi", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         } else {
                             LazyVerticalGrid(

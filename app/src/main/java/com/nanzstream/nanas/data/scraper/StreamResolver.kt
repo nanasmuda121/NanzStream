@@ -109,6 +109,56 @@ object StreamResolver {
         null
     }
 
+    suspend fun extractOkRuStreams(okUrl: String, referer: String): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<Pair<String, String>>()
+        try {
+            val req = Request.Builder()
+                .url(okUrl)
+                .header("User-Agent", USER_AGENT)
+                .header("Referer", referer)
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .build()
+            val resp = ApiClient.okHttpClient.newCall(req).execute()
+            val html = resp.body?.string() ?: return@withContext emptyList()
+
+            val optMatch = Regex("""data-options=["']([^"']+)["']""").find(html)
+            if (optMatch != null) {
+                val rawJson = Parser.unescapeEntities(optMatch.groupValues[1], false)
+                val optObj = JSONObject(rawJson)
+                val flashvars = optObj.optJSONObject("flashvars")
+                val metaRaw = flashvars?.opt("metadata")
+                val metaObj = when (metaRaw) {
+                    is JSONObject -> metaRaw
+                    is String -> JSONObject(metaRaw)
+                    else -> null
+                }
+
+                val videosArr = metaObj?.optJSONArray("videos")
+                if (videosArr != null && videosArr.length() > 0) {
+                    for (i in 0 until videosArr.length()) {
+                        val v = videosArr.getJSONObject(i)
+                        val name = v.optString("name")
+                        val url = v.optString("url")
+                        if (url.startsWith("http")) {
+                            val qualityLabel = when (name.lowercase()) {
+                                "full" -> "1080p Full HD"
+                                "hd" -> "720p HD"
+                                "sd" -> "480p SD (Lancar / Anti-Lag)"
+                                "low" -> "360p Low (Hemat Kuota)"
+                                "mobile" -> "Mobile"
+                                else -> name.uppercase()
+                            }
+                            list.add(qualityLabel to url)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        list
+    }
+
     suspend fun extractDesuStreamDirect(desuUrl: String): String? = withContext(Dispatchers.IO) {
         try {
             val req = Request.Builder()
