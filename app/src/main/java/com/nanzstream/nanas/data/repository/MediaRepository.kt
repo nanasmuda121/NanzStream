@@ -308,8 +308,8 @@ class MediaRepository {
                         }
                         val dh = DonghuaScraper.search(cleanQ, 1).take(2).map { it.title }
                         val wt = BacakomikScraper.search(cleanQ, 1).take(2).map { it.title }
-                        val dc = DracinemaScraper.search(cleanQ, 1).take(2).map { it.title }
-                        val yt = YouTubeScraper.search(cleanQ, 1).take(2).map { it.title }
+                        val dc = DracinemaScraper.search(cleanQ).take(2).map { it.title }
+                        val yt = YouTubeScraper.search(cleanQ).take(2).map { it.title }
                         (anime + dh + wt + dc + yt).forEach { add(it) }
                     }
                 }
