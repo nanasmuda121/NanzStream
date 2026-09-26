@@ -231,6 +231,7 @@ fun VerticalShortsPlayerScreen(
                     .setReadTimeoutMs(15000)
                     .setDefaultRequestProperties(mapOf("Origin" to "https://www.youtube.com", "Referer" to "https://www.youtube.com/"))
 
+                val audioUrl = res?.audioUrl
                 val isHls = streamUrl.contains(".m3u8", ignoreCase = true) ||
                     streamUrl.contains("manifest/hls", ignoreCase = true) ||
                     streamUrl.contains("hls_variant", ignoreCase = true) ||
