@@ -57,6 +57,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.nanzstream.nanas.data.remote.ApiClient
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlayer
 import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -679,7 +680,7 @@ fun VideoPlayerScreen(
                                 }
                             },
                             update = { wv ->
-                                val target = webEmbedUrl.ifBlank { chosenServerUrl }
+                                val target = webEmbedUrl
                                 if (target.isNotBlank()) {
                                     val iframeHtml = """
                                         <!DOCTYPE html>

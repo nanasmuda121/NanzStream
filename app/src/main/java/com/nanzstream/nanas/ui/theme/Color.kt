@@ -36,6 +36,7 @@ val TextPrimary = Color(0xFFFFFFFF)
 val TextSecondary = Color(0xFFD1D1D6)
 val TextMuted = Color(0xFF8E8E93)
 val TextDark = Color(0xFF060608)
+val AccentCyan = Color(0xFF00E5FF)
 
 // Monochrome Gradients
 val GlassBorderGradient = Brush.verticalGradient(
