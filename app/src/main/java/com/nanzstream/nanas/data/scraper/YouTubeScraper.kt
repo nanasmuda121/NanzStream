@@ -132,6 +132,21 @@ object YouTubeScraper {
                                 val dur = vr.optJSONObject("lengthText")?.optString("simpleText") ?: ""
                                 val views = vr.optJSONObject("viewCountText")?.optString("simpleText") ?: ""
 
+                                // Extract browseId (channelId)
+                                val chBrowseId = vr.optJSONObject("channelThumbnailSupportedRenderers")
+                                    ?.optJSONObject("channelThumbnailWithLinkRenderer")
+                                    ?.optJSONObject("navigationEndpoint")
+                                    ?.optJSONObject("browseEndpoint")
+                                    ?.optString("browseId")
+                                    ?.ifBlank { null }
+                                    ?: vr.optJSONObject("ownerText")
+                                        ?.optJSONArray("runs")
+                                        ?.optJSONObject(0)
+                                        ?.optJSONObject("navigationEndpoint")
+                                        ?.optJSONObject("browseEndpoint")
+                                        ?.optString("browseId")
+                                        ?.ifBlank { null }
+
                                 // Extract channel avatar for video
                                 val chThumbRaw = vr.optJSONObject("channelThumbnailSupportedRenderers")
                                     ?.optJSONObject("channelThumbnailWithLinkRenderer")
@@ -140,7 +155,7 @@ object YouTubeScraper {
                                     ?.let { arr -> arr.optJSONObject(arr.length() - 1)?.optString("url") }
                                 var chThumb = fixUrl(chThumbRaw)
                                 if (chThumb.isBlank()) {
-                                    val match = Regex("""(https?:)?//yt3\.(?:ggpht\.com|googleusercontent\.com)/[a-zA-Z0-9_\-\/=]+""").find(vr.toString())
+                                    val match = Regex("""(https?:)?//yt3\.(?:ggpht\.com|googleusercontent\.com)/[^\s"']+""").find(vr.toString())
                                     if (match != null) {
                                         chThumb = fixUrl(match.value)
                                     }
@@ -160,7 +175,8 @@ object YouTubeScraper {
                                             synopsis = if (!channel.isNullOrBlank()) "Channel: $channel" else "",
                                             genres = listOf("YouTube", channel ?: "Video"),
                                             channelAvatar = chThumb.ifBlank { null },
-                                            channelTitle = channel
+                                            channelTitle = channel,
+                                            channelId = chBrowseId
                                         )
                                     )
                                 }
@@ -171,11 +187,12 @@ object YouTubeScraper {
                             if (cr != null) {
                                 val cId = cr.optString("channelId")
                                 val cTitle = cr.optJSONObject("title")?.optString("simpleText")
+                                    ?: cr.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
                                 val subs = cr.optJSONObject("subscriberCountText")?.optString("simpleText") ?: "Channel"
                                 val cThumbArr = cr.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                                 var cThumb = fixUrl(cThumbArr?.optJSONObject(cThumbArr.length() - 1)?.optString("url"))
                                 if (cThumb.isBlank()) {
-                                    val match = Regex("""(https?:)?//yt3\.(?:ggpht\.com|googleusercontent\.com)/[a-zA-Z0-9_\-\/=]+""").find(cr.toString())
+                                    val match = Regex("""(https?:)?//yt3\.(?:ggpht\.com|googleusercontent\.com)/[^\s"']+""").find(cr.toString())
                                     if (match != null) {
                                         cThumb = fixUrl(match.value)
                                     }
@@ -194,7 +211,8 @@ object YouTubeScraper {
                                             rating = subs,
                                             genres = listOf("YouTube", "Channel"),
                                             channelAvatar = cThumb.ifBlank { null },
-                                            channelTitle = cTitle
+                                            channelTitle = cTitle,
+                                            channelId = cId
                                         )
                                     )
                                 }
@@ -272,11 +290,12 @@ object YouTubeScraper {
                 videoIdOrChannelId.contains("v=") -> Regex("""v=([a-zA-Z0-9_\-]+)""").find(videoIdOrChannelId)?.groupValues?.get(1) ?: videoIdOrChannelId
                 videoIdOrChannelId.contains("youtu.be/") -> Regex("""youtu\.be/([a-zA-Z0-9_\-]+)""").find(videoIdOrChannelId)?.groupValues?.get(1) ?: videoIdOrChannelId
                 videoIdOrChannelId.contains("youtube.com/channel/") -> videoIdOrChannelId.removePrefix("https://www.youtube.com/channel/").split("/").firstOrNull() ?: videoIdOrChannelId
+                videoIdOrChannelId.contains("youtube.com/@") -> "@" + videoIdOrChannelId.substringAfter("youtube.com/@").substringBefore("/").substringBefore("?")
                 else -> videoIdOrChannelId.removePrefix("https://www.youtube.com/watch?v=").trim()
             }
 
-            // If it's a channel ID (starts with UC)
-            if (cleanId.startsWith("UC")) {
+            val isVideoId = cleanId.length == 11 && cleanId.matches(Regex("""^[a-zA-Z0-9_\-]{11}$""")) && !cleanId.startsWith("UC")
+            if (!isVideoId || cleanId.startsWith("UC") || cleanId.startsWith("@")) {
                 return@withContext getChannelDetail(cleanId)
             }
 
@@ -420,95 +439,164 @@ object YouTubeScraper {
         }
     }
 
-    suspend fun getChannelDetail(channelId: String): MediaDetail? = withContext(Dispatchers.IO) {
+    suspend fun getChannelDetail(channelIdOrQuery: String): MediaDetail? = withContext(Dispatchers.IO) {
         try {
+            var channelId = channelIdOrQuery.trim()
+            var searchFallbackDetail: MediaItem? = null
+
+            // If it's not a standard UC... channelId, search YouTube first to resolve it
+            if (!channelId.startsWith("UC")) {
+                val cleanQ = channelId.removePrefix("@").trim()
+                val searchResults = search(cleanQ)
+                val foundChannel = searchResults.firstOrNull { it.badge == "Channel" || it.genres.contains("Channel") || it.id.startsWith("UC") }
+                    ?: searchResults.firstOrNull { it.channelId != null }
+                if (foundChannel != null) {
+                    channelId = foundChannel.channelId ?: foundChannel.id
+                    searchFallbackDetail = foundChannel
+                }
+            }
+
+            // 1. Fetch channel home page with browse API
             val body = JSONObject().apply {
                 put("context", createWebContext())
                 put("browseId", channelId)
             }
+            val json = postJson("browse", body)
 
-            val json = postJson("browse", body) ?: return@withContext null
-            val header = json.optJSONObject("header")
+            val header = json?.optJSONObject("header")
             val pageH = header?.optJSONObject("pageHeaderRenderer")
             val c4H = header?.optJSONObject("c4TabbedHeaderRenderer")
+            val vm = pageH?.optJSONObject("content")?.optJSONObject("pageHeaderViewModel")
 
-            val title = pageH?.optString("pageTitle")
+            val title = vm?.optJSONObject("title")?.optJSONObject("dynamicTextViewModel")?.optJSONObject("text")?.optString("content")
+                ?: pageH?.optString("pageTitle")
                 ?: c4H?.optString("title")
+                ?: searchFallbackDetail?.title
                 ?: "YouTube Channel"
 
-            // Modern YouTube WEB stores avatar in pageHeaderViewModel
-            val vm = pageH?.optJSONObject("content")?.optJSONObject("pageHeaderViewModel")
             val avatarSources = vm?.optJSONObject("image")
                 ?.optJSONObject("decoratedAvatarViewModel")
                 ?.optJSONObject("avatar")
                 ?.optJSONObject("avatarViewModel")
                 ?.optJSONObject("image")
                 ?.optJSONArray("sources")
+            val rawAvatar = avatarSources?.optJSONObject(avatarSources.length() - 1)?.optString("url")
+                ?: c4H?.optJSONObject("avatar")?.optJSONArray("thumbnails")?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
+                ?: searchFallbackDetail?.channelAvatar
+                ?: searchFallbackDetail?.thumbnail
+                ?: ""
 
             val bannerSources = vm?.optJSONObject("banner")
                 ?.optJSONObject("imageBannerViewModel")
                 ?.optJSONObject("image")
                 ?.optJSONArray("sources")
-
-            val rawAvatar = avatarSources?.optJSONObject(avatarSources.length() - 1)?.optString("url")
-                ?: c4H?.optJSONObject("avatar")?.optJSONArray("thumbnails")?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
-                ?: ""
-
             val rawBanner = bannerSources?.optJSONObject(bannerSources.length() - 1)?.optString("url")
                 ?: c4H?.optJSONObject("banner")?.optJSONArray("thumbnails")?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
                 ?: rawAvatar
 
+            val metadataRows = vm?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")?.optJSONArray("metadataRows")
+            var subs = c4H?.optJSONObject("subscriberCountText")?.optString("simpleText") ?: ""
+            var handle = ""
+            if (metadataRows != null) {
+                for (r in 0 until metadataRows.length()) {
+                    val rowObj = metadataRows.getJSONObject(r)
+                    val parts = rowObj.optJSONArray("metadataParts")
+                    if (parts != null) {
+                        for (p in 0 until parts.length()) {
+                            val partText = parts.getJSONObject(p).optJSONObject("text")?.optString("content").orEmpty()
+                            if (partText.startsWith("@")) {
+                                handle = partText
+                            } else if (partText.contains("sub", ignoreCase = true) || partText.contains("pelanggan", ignoreCase = true)) {
+                                subs = partText
+                            }
+                        }
+                    }
+                }
+            }
+            if (subs.isBlank()) subs = searchFallbackDetail?.rating ?: "Channel Resmi"
+
+            val desc = vm?.optJSONObject("description")?.optJSONObject("descriptionPreviewViewModel")?.optJSONObject("description")?.optString("content")
+                ?: "Channel YouTube resmi: $title"
+
             val avatar = fixUrl(rawAvatar)
             val banner = fixUrl(rawBanner)
-            val subs = c4H?.optJSONObject("subscriberCountText")?.optString("simpleText") ?: "Channel"
 
-            // Scrape videos in channel tabs
+            // 2. Fetch channel videos using "Videos" tab param
             val episodes = mutableListOf<EpisodeItem>()
-            val tabs = json.optJSONObject("contents")
-                ?.optJSONObject("twoColumnBrowseResultsRenderer")
-                ?.optJSONArray("tabs")
-
-            if (tabs != null) {
-                for (i in 0 until tabs.length()) {
-                    val tab = tabs.getJSONObject(i).optJSONObject("tabRenderer")
-                    val secList = tab?.optJSONObject("content")?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
-                    if (secList != null) {
-                        for (s in 0 until secList.length()) {
-                            val isec = secList.getJSONObject(s).optJSONObject("itemSectionRenderer")?.optJSONArray("contents")
-                            if (isec != null) {
-                                for (k in 0 until isec.length()) {
-                                    val item = isec.getJSONObject(k)
-                                    val grid = item.optJSONObject("gridRenderer")?.optJSONArray("items")
-                                        ?: item.optJSONObject("shelfRenderer")?.optJSONObject("content")?.optJSONObject("horizontalListRenderer")?.optJSONArray("items")
-
-                                    if (grid != null) {
-                                        for (g in 0 until grid.length()) {
-                                            val gvr = grid.getJSONObject(g).optJSONObject("gridVideoRenderer")
-                                                ?: grid.getJSONObject(g).optJSONObject("videoRenderer")
-                                            if (gvr != null) {
-                                                val vId = gvr.optString("videoId")
-                                                val vTitle = gvr.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                                                    ?: gvr.optJSONObject("title")?.optString("simpleText") ?: "Video"
-                                                if (vId.isNotBlank() && !episodes.any { it.id.contains(vId) }) {
-                                                    episodes.add(
-                                                        EpisodeItem(
-                                                            id = "https://www.youtube.com/watch?v=$vId",
-                                                            episodeNumber = (episodes.size + 1).toString(),
-                                                            title = vTitle,
-                                                            url = "https://www.youtube.com/watch?v=$vId"
-                                                        )
-                                                    )
-                                                }
-                                            }
-                                        }
+            try {
+                val vidsBody = JSONObject().apply {
+                    put("context", createWebContext())
+                    put("browseId", channelId)
+                    put("params", "EgZ2aWRlb3PyBgQKAjoA")
+                }
+                val vidsJson = postJson("browse", vidsBody)
+                val tabs = vidsJson?.optJSONObject("contents")
+                    ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                    ?.optJSONArray("tabs")
+                if (tabs != null) {
+                    for (t in 0 until tabs.length()) {
+                        val tabR = tabs.getJSONObject(t).optJSONObject("tabRenderer")
+                        val richGrid = tabR?.optJSONObject("content")?.optJSONObject("richGridRenderer")?.optJSONArray("contents")
+                        if (richGrid != null) {
+                            for (i in 0 until richGrid.length()) {
+                                val itm = richGrid.getJSONObject(i).optJSONObject("richItemRenderer")?.optJSONObject("content")
+                                val lvm = itm?.optJSONObject("lockupViewModel")
+                                val vr = itm?.optJSONObject("videoRenderer")
+                                if (lvm != null) {
+                                    val vId = lvm.optString("contentId")
+                                    val vTitle = lvm.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")?.optJSONObject("title")?.optString("content")
+                                    val thumbSources = lvm.optJSONObject("contentImage")?.optJSONObject("thumbnailViewModel")?.optJSONObject("image")?.optJSONArray("sources")
+                                    val thumb = fixUrl(thumbSources?.optJSONObject(thumbSources.length() - 1)?.optString("url"))
+                                    val overlays = lvm.optJSONObject("contentImage")?.optJSONObject("thumbnailViewModel")?.optJSONArray("overlays")
+                                    var dur = ""
+                                    if (overlays != null && overlays.length() > 0) {
+                                        dur = overlays.optJSONObject(0)?.optJSONObject("thumbnailBottomOverlayViewModel")
+                                            ?.optJSONArray("badges")?.optJSONObject(0)
+                                            ?.optJSONObject("thumbnailBadgeViewModel")?.optString("text").orEmpty()
+                                    }
+                                    if (vId.isNotBlank() && !vTitle.isNullOrBlank() && !episodes.any { it.id.contains(vId) }) {
+                                        episodes.add(
+                                            EpisodeItem(
+                                                id = "https://www.youtube.com/watch?v=$vId",
+                                                episodeNumber = (episodes.size + 1).toString(),
+                                                title = vTitle,
+                                                url = "https://www.youtube.com/watch?v=$vId",
+                                                thumbnail = thumb.ifBlank { "https://i.ytimg.com/vi/$vId/hqdefault.jpg" },
+                                                channelTitle = title,
+                                                duration = dur.ifBlank { null }
+                                            )
+                                        )
+                                    }
+                                } else if (vr != null) {
+                                    val vId = vr.optString("videoId")
+                                    val vTitle = vr.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                                        ?: vr.optJSONObject("title")?.optString("simpleText")
+                                    val thumbArr = vr.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                                    val thumb = fixUrl(thumbArr?.optJSONObject(thumbArr.length() - 1)?.optString("url"))
+                                    val dur = vr.optJSONObject("lengthText")?.optString("simpleText").orEmpty()
+                                    if (vId.isNotBlank() && !vTitle.isNullOrBlank() && !episodes.any { it.id.contains(vId) }) {
+                                        episodes.add(
+                                            EpisodeItem(
+                                                id = "https://www.youtube.com/watch?v=$vId",
+                                                episodeNumber = (episodes.size + 1).toString(),
+                                                title = vTitle,
+                                                url = "https://www.youtube.com/watch?v=$vId",
+                                                thumbnail = thumb.ifBlank { "https://i.ytimg.com/vi/$vId/hqdefault.jpg" },
+                                                channelTitle = title,
+                                                duration = dur.ifBlank { null }
+                                            )
+                                        )
                                     }
                                 }
                             }
                         }
                     }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
 
+            // Fallback: search videos of channel if browse returned 0
             if (episodes.isEmpty()) {
                 val searchVids = search(title)
                 searchVids.forEachIndexed { idx, vid ->
@@ -517,7 +605,9 @@ object YouTubeScraper {
                             id = vid.url ?: "https://www.youtube.com/watch?v=${vid.id}",
                             episodeNumber = (idx + 1).toString(),
                             title = vid.title,
-                            url = vid.url ?: "https://www.youtube.com/watch?v=${vid.id}"
+                            url = vid.url ?: "https://www.youtube.com/watch?v=${vid.id}",
+                            thumbnail = vid.thumbnail ?: "https://i.ytimg.com/vi/${vid.id}/hqdefault.jpg",
+                            channelTitle = title
                         )
                     )
                 }
@@ -529,14 +619,15 @@ object YouTubeScraper {
                 category = CategoryType.YOUTUBE,
                 thumbnail = avatar,
                 backdrop = banner,
-                synopsis = "Channel YouTube Resmi: $title\nSubscribers: $subs",
+                synopsis = if (handle.isNotBlank()) "$handle • $subs\n\n$desc" else "$subs\n\n$desc",
                 genres = listOf("YouTube", "Channel"),
                 status = subs,
-                rating = "Channel",
+                rating = if (handle.isNotBlank()) handle else "Channel",
                 totalEpisodes = "${episodes.size} Video",
                 episodes = episodes,
                 channelAvatar = avatar,
-                channelTitle = title
+                channelTitle = title,
+                channelId = channelId
             )
         } catch (e: Exception) {
             e.printStackTrace()

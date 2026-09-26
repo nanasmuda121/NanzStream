@@ -231,6 +231,9 @@ fun DetailScreen(
                 }
 
                 // Poster & Metadata Info floating at bottom
+                val isYouTubeChannel = currentDetail.category == CategoryType.YOUTUBE &&
+                        (currentDetail.genres.contains("Channel") || currentDetail.id.startsWith("UC"))
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -238,22 +241,42 @@ fun DetailScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(width = 95.dp, height = 135.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
-                            .background(DarkCard)
-                    ) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(currentDetail.thumbnail)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = currentDetail.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                    if (isYouTubeChannel) {
+                        Box(
+                            modifier = Modifier
+                                .size(76.dp)
+                                .clip(CircleShape)
+                                .border(1.5.dp, GlassBorder, CircleShape)
+                                .background(DarkCard)
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(currentDetail.channelAvatar ?: currentDetail.thumbnail)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = currentDetail.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 95.dp, height = 135.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
+                                .background(DarkCard)
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(currentDetail.thumbnail)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = currentDetail.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.width(14.dp))

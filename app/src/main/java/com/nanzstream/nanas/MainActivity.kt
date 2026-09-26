@@ -171,7 +171,7 @@ class MainActivity : ComponentActivity() {
                                             (item.url?.contains("/channel/") == true)
                                     if (isChannel) {
                                         navController.navigate(
-                                            Screen.Detail.createRoute("youtube", item.id)
+                                            Screen.Detail.createRoute("youtube", item.channelId ?: item.id)
                                         )
                                     } else {
                                         val isShorts = item.badge.equals("Shorts", ignoreCase = true) ||

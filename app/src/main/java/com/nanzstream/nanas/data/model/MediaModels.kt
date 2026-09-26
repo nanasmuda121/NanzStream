@@ -32,7 +32,8 @@ data class MediaItem(
     val year: String? = null,
     val genres: List<String> = emptyList(),
     val channelAvatar: String? = null,
-    val channelTitle: String? = null
+    val channelTitle: String? = null,
+    val channelId: String? = null
 )
 
 data class MediaDetail(
@@ -50,7 +51,8 @@ data class MediaDetail(
     val episodes: List<EpisodeItem> = emptyList(),
     val chapters: List<MangaChapterItem> = emptyList(),
     val channelAvatar: String? = null,
-    val channelTitle: String? = null
+    val channelTitle: String? = null,
+    val channelId: String? = null
 )
 
 data class EpisodeItem(
