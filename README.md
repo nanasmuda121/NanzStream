@@ -44,7 +44,7 @@ Aplikasi Android Native modern berbasis **Kotlin + Jetpack Compose** dengan desa
 
 - **Nama Aplikasi**: NanzStream
 - **Package Name**: `com.nanzstream.nanas`
-- **Versi**: `1.3.15` (Version Code: 45)
+- **Versi**: `1.3.16` (Version Code: 46)
 - **Min SDK**: Android 7.0 (API 24)
 - **Target SDK**: Android 15 (API 35)
 - **UI Framework**: Android Jetpack Compose + Material 3

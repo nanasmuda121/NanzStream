@@ -337,7 +337,7 @@ class MediaRepository {
                     CategoryType.DONGHUA -> DonghuaScraper.getDetail(idOrSlug)
                     CategoryType.MANGA -> {
                         // 100% Bacakomik
-                        val bkDetail = kotlinx.coroutines.withTimeoutOrNull(6000) {
+                        val bkDetail = kotlinx.coroutines.withTimeoutOrNull(15000) {
                             try {
                                 BacakomikScraper.getDetail(idOrSlug)
                             } catch (e: Exception) {
@@ -473,7 +473,7 @@ class MediaRepository {
         }
 
         // 100% Bacakomik
-        val res = kotlinx.coroutines.withTimeoutOrNull(6000) {
+        val res = kotlinx.coroutines.withTimeoutOrNull(18000) {
             try {
                 val list = BacakomikScraper.getPages(targetUrl)
                 if (list.isNotEmpty()) list else null
@@ -483,7 +483,7 @@ class MediaRepository {
         }
         if (!res.isNullOrEmpty()) return@withContext res
 
-        getFallbackMangaPages()
+        emptyList()
     }
 
     fun getFallbackMangaPages(): List<MangaPageItem> = listOf(

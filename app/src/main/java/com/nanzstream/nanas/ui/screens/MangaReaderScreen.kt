@@ -75,7 +75,10 @@ fun MangaReaderScreen(
     // Fetch chapters list for previous/next chapter navigation
     LaunchedEffect(mangaId, currentChapterId) {
         val targetMangaId = mangaId.ifBlank {
-            Regex("""title_no=(\d+)""").find(currentChapterId)?.groupValues?.get(1).orEmpty()
+            val slugFromCh = currentChapterId.trimEnd('/').substringAfterLast('/')
+                .substringBefore("-chapter-")
+                .substringBefore("-ch-")
+            if (slugFromCh.isNotBlank()) slugFromCh else "1"
         }
         if (targetMangaId.isNotBlank() && chapters.isEmpty()) {
             try {
@@ -139,13 +142,13 @@ fun MangaReaderScreen(
         // 2. If not offline, fetch from network with bounded timeout
         if (pages.isEmpty()) {
             try {
-                val fetched = kotlinx.coroutines.withTimeoutOrNull(5000) {
+                val fetched = kotlinx.coroutines.withTimeoutOrNull(20000) {
                     repository.getMangaPages(currentChapterId)
                 }
-                pages = if (!fetched.isNullOrEmpty()) fetched else repository.getFallbackMangaPages()
+                pages = fetched.orEmpty()
             } catch (e: Exception) {
                 e.printStackTrace()
-                pages = repository.getFallbackMangaPages()
+                pages = emptyList()
             } finally {
                 isLoading = false
             }
@@ -633,8 +636,9 @@ fun MangaReaderScreen(
 fun MangaPageView(page: MangaPageItem) {
     var decryptedBitmap by remember(page.url) { mutableStateOf<Bitmap?>(null) }
     var isDecrypting by remember(page.url) { mutableStateOf(!page.key.isNullOrBlank()) }
+    var reloadTrigger by remember(page.url) { mutableIntStateOf(0) }
 
-    LaunchedEffect(page.url) {
+    LaunchedEffect(page.url, reloadTrigger) {
         if (!page.key.isNullOrBlank() && !page.iv.isNullOrBlank()) {
             isDecrypting = true
             decryptedBitmap = MangaDecryptor.loadAndDecryptBitmap(page.url, page.key, page.iv)
@@ -666,20 +670,23 @@ fun MangaPageView(page: MangaPageItem) {
             }
         } else {
             val isLocalFile = page.url.startsWith("file://")
-            val imageModel = if (isLocalFile) {
-                File(page.url.removePrefix("file://"))
-            } else {
-                val referer = if (page.url.contains("animasu")) {
-                    "https://animasu.love/"
+            val context = LocalContext.current
+            val imageModel = remember(page.url, reloadTrigger) {
+                if (isLocalFile) {
+                    File(page.url.removePrefix("file://"))
                 } else {
-                    "https://bacakomik.my/"
+                    val referer = if (page.url.contains("animasu")) {
+                        "https://animasu.love/"
+                    } else {
+                        "https://bacakomik.my/"
+                    }
+                    ImageRequest.Builder(context)
+                        .data(page.url)
+                        .addHeader("Referer", referer)
+                        .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                        .crossfade(true)
+                        .build()
                 }
-                ImageRequest.Builder(LocalContext.current)
-                    .data(page.url)
-                    .addHeader("Referer", referer)
-                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                    .crossfade(true)
-                    .build()
             }
 
             SubcomposeAsyncImage(
@@ -719,14 +726,27 @@ fun MangaPageView(page: MangaPageItem) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(180.dp)
-                            .background(Color(0xFF1A1A1A)),
+                            .background(Color(0xFF1A1A1A))
+                            .clickable { reloadTrigger++ }
+                            .padding(16.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "Halaman ${page.page} gagal dimuat",
-                            color = TextMuted,
-                            fontSize = 12.sp
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "Halaman ${page.page} gagal dimuat",
+                                color = TextMuted,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "Ketuk untuk memuat ulang",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             )

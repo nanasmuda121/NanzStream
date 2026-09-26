@@ -285,38 +285,68 @@ object BacakomikScraper {
         val doc = Jsoup.parse(html)
         val pages = mutableListOf<String>()
 
-        // Container can be #anjay_ini_id_kh, .oi_ada_class_skrng, #readerarea, or .entry-content
-        val container = doc.selectFirst("#anjay_ini_id_kh")
-            ?: doc.selectFirst(".oi_ada_class_skrng")
-            ?: doc.selectFirst("#readerarea")
-            ?: doc.selectFirst(".entry-content")
-            ?: doc
+        fun extractCandidate(img: org.jsoup.nodes.Element): String {
+            val candidates = listOf(
+                img.attr("data-lazy-src"),
+                img.attr("data-src"),
+                img.attr("data-original"),
+                img.attr("data-url"),
+                img.attr("data-wpfc-original-src"),
+                Regex("""src=['"]([^'"]+)['"]""").find(img.attr("onerror") + " " + img.attr("onError"))?.groupValues?.get(1).orEmpty(),
+                img.attr("src")
+            )
+            for (cand in candidates) {
+                val clean = cand.trim()
+                if (clean.startsWith("http") &&
+                    !clean.contains("data:image", ignoreCase = true) &&
+                    !clean.contains("blank.gif", ignoreCase = true) &&
+                    !clean.contains("placeholder", ignoreCase = true)
+                ) {
+                    val isImage = clean.contains(".webp", ignoreCase = true) ||
+                            clean.contains(".jpg", ignoreCase = true) ||
+                            clean.contains(".jpeg", ignoreCase = true) ||
+                            clean.contains(".png", ignoreCase = true) ||
+                            clean.contains("/media/", ignoreCase = true) ||
+                            clean.contains("/data/", ignoreCase = true)
 
-        container.select("img").forEach { img ->
-            val src = img.attr("data-lazy-src")
-                .ifEmpty { img.attr("data-src") }
-                .ifEmpty {
-                    val onerror = img.attr("onError")
-                    Regex("""src=['"]([^'"]+)['"]""").find(onerror)?.groupValues?.get(1).orEmpty()
+                    val isIgnored = clean.contains("ikon", ignoreCase = true) ||
+                            clean.contains("logo", ignoreCase = true) ||
+                            clean.contains("svg", ignoreCase = true) ||
+                            clean.contains("banner", ignoreCase = true) ||
+                            clean.contains("ads", ignoreCase = true) ||
+                            clean.contains("resize=", ignoreCase = true)
+
+                    if (isImage && !isIgnored) {
+                        return clean
+                    }
                 }
-                .ifEmpty { img.attr("src") }
-                .trim()
+            }
+            return ""
+        }
 
-            if (src.isNotBlank() && src.startsWith("http")) {
-                val isImage = src.contains(".webp", ignoreCase = true) ||
-                        src.contains(".jpg", ignoreCase = true) ||
-                        src.contains(".jpeg", ignoreCase = true) ||
-                        src.contains(".png", ignoreCase = true) ||
-                        src.contains("/media/", ignoreCase = true)
+        // Try primary containers first
+        val containers = listOfNotNull(
+            doc.selectFirst("#anjay_ini_id_kh"),
+            doc.selectFirst("#readerarea"),
+            doc.selectFirst(".oi_ada_class_skrng"),
+            doc.selectFirst(".entry-content")
+        )
 
-                val isIgnored = src.contains("ikon", ignoreCase = true) ||
-                        src.contains("logo", ignoreCase = true) ||
-                        src.contains("svg", ignoreCase = true) ||
-                        src.contains("banner", ignoreCase = true) ||
-                        src.contains("ads", ignoreCase = true) ||
-                        src.contains("wp-content/uploads/2023", ignoreCase = true)
+        for (container in containers) {
+            container.select("img").forEach { img ->
+                val src = extractCandidate(img)
+                if (src.isNotBlank() && !pages.contains(src)) {
+                    pages.add(src)
+                }
+            }
+            if (pages.isNotEmpty()) break
+        }
 
-                if (isImage && !isIgnored && !pages.contains(src)) {
+        // Fallback: search all img tags in document if container was missing
+        if (pages.isEmpty()) {
+            doc.select("img").forEach { img ->
+                val src = extractCandidate(img)
+                if (src.isNotBlank() && !pages.contains(src)) {
                     pages.add(src)
                 }
             }

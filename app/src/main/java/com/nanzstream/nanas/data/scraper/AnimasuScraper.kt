@@ -419,9 +419,10 @@ object AnimasuScraper {
             servers.add(StreamServerItem(name = "Animasu Web Player", url = targetUrl, isDirectHls = false))
         }
 
-        // Sort so Direct HLS streams are ALWAYS at the top
+        // Sort: Blogger server is PRIMARY (#1 rank), then Direct HLS, then 720p/1080p mirrors
         val sortedServers = servers.sortedWith(
             compareBy<StreamServerItem>(
+                { if (it.name.contains("Blogger", ignoreCase = true) || it.url.contains("blogger.com", ignoreCase = true)) 0 else 1 },
                 { if (it.isDirectHls) 0 else 1 },
                 { if (it.name.contains("720p", ignoreCase = true)) 0 else if (it.name.contains("1080p", ignoreCase = true)) 1 else 2 }
             )
