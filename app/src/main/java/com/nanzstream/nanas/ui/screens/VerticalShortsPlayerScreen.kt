@@ -229,6 +229,7 @@ fun VerticalShortsPlayerScreen(
                     .setAllowCrossProtocolRedirects(true)
                     .setConnectTimeoutMs(15000)
                     .setReadTimeoutMs(15000)
+                    .setDefaultRequestProperties(mapOf("Origin" to "https://www.youtube.com", "Referer" to "https://www.youtube.com/"))
 
                 val audioUrl = res?.audioUrl
                 if (!audioUrl.isNullOrBlank() && audioUrl.startsWith("http")) {

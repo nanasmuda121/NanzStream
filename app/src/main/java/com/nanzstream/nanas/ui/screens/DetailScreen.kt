@@ -360,18 +360,20 @@ fun DetailScreen(
 
         // 4. Content List Header (Episodes or Chapters)
         item {
-            val isMovie = currentDetail.category != CategoryType.MANGA && (currentDetail.category == CategoryType.MOVIES || currentDetail.title.contains("Movie", ignoreCase = true) || (currentDetail.episodes.size <= 1 && currentDetail.episodes.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
+            val isSingleMovie = (currentDetail.category == CategoryType.MOVIES && currentDetail.episodes.size <= 1) ||
+                    currentDetail.totalEpisodes.equals("Full Movie", ignoreCase = true) ||
+                    (currentDetail.episodes.size <= 1 && currentDetail.title.contains("Movie", ignoreCase = true))
             val isYouTube = currentDetail.category == CategoryType.YOUTUBE
             val listTitle = when {
                 currentDetail.category == CategoryType.MANGA -> "Daftar Chapter"
-                isMovie -> "Film / Movie"
                 isYouTube -> "Daftar Video"
+                isSingleMovie -> "Film / Movie"
                 else -> "Pilihan Episode"
             }
             val countText = when {
                 currentDetail.category == CategoryType.MANGA -> "${currentDetail.chapters.size} Chapter"
-                isMovie -> "Full Movie"
                 isYouTube -> "${currentDetail.episodes.size} Video"
+                isSingleMovie -> "Full Movie"
                 else -> "${currentDetail.episodes.size} Episode"
             }
 
@@ -398,7 +400,9 @@ fun DetailScreen(
 
         // 5. Episode List (for Video)
         if (currentDetail.category != CategoryType.MANGA) {
-            val isMovie = (currentDetail.category == CategoryType.MOVIES) || currentDetail.title.contains("Movie", ignoreCase = true) || (currentDetail.episodes.size <= 1 && currentDetail.episodes.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
+            val isSingleMovie = (currentDetail.category == CategoryType.MOVIES && currentDetail.episodes.size <= 1) ||
+                    currentDetail.totalEpisodes.equals("Full Movie", ignoreCase = true) ||
+                    (currentDetail.episodes.size <= 1 && currentDetail.title.contains("Movie", ignoreCase = true))
             val isYouTube = currentDetail.category == CategoryType.YOUTUBE
             items(currentDetail.episodes) { ep ->
                 Box(
@@ -435,9 +439,10 @@ fun DetailScreen(
                             Column {
                                 val epItemTitle = when {
                                     isYouTube -> ep.title
-                                    isMovie -> "Full Movie"
+                                    isSingleMovie -> if (ep.title.isNotBlank() && !ep.title.equals("Episode 1", ignoreCase = true)) ep.title else "Full Movie"
                                     ep.title.equals("Episode 0", ignoreCase = true) || ep.episodeNumber == "0" -> "Episode 1"
-                                    else -> ep.title
+                                    ep.title.isNotBlank() -> ep.title
+                                    else -> "Episode ${ep.episodeNumber}"
                                 }
                                 Text(
                                     text = epItemTitle,

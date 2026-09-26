@@ -222,20 +222,27 @@ class MainActivity : ComponentActivity() {
                                 repository = repository,
                                 onBackClick = { navController.popBackStack() },
                                 onPlayEpisode = { detail, ep ->
-                                    val isMovie = (detail.category == CategoryType.MOVIES) || detail.title.contains("Movie", ignoreCase = true) || (detail.episodes.size <= 1 && detail.episodes.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
+                                    val isSingleMovie = (detail.category == CategoryType.MOVIES && detail.episodes.size <= 1) ||
+                                            detail.totalEpisodes.equals("Full Movie", ignoreCase = true) ||
+                                            (detail.episodes.size <= 1 && detail.title.contains("Movie", ignoreCase = true))
                                     val isYouTube = detail.category == CategoryType.YOUTUBE
                                     val epItemTitle = when {
                                         isYouTube -> ep.title
-                                        isMovie -> "Full Movie"
+                                        isSingleMovie -> if (ep.title.isNotBlank() && !ep.title.equals("Episode 1", ignoreCase = true)) ep.title else "Full Movie"
                                         ep.title.equals("Episode 0", ignoreCase = true) || ep.episodeNumber == "0" -> "Episode 1"
-                                        else -> ep.title
+                                        ep.title.isNotBlank() -> ep.title
+                                        else -> "Episode ${ep.episodeNumber}"
                                     }
                                     val parsedEp = ep.episodeNumber.toIntOrNull()
                                         ?: Regex("""\b(\d+)\b""").find(ep.title)?.groupValues?.get(1)?.toIntOrNull()
                                         ?: Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(ep.url)?.groupValues?.get(1)?.toIntOrNull()
                                         ?: 1
                                     val safeEpisode = if (parsedEp <= 0) 1 else parsedEp
-                                    val streamTitle = if (isYouTube) ep.title else "${detail.title} - $epItemTitle"
+                                    val streamTitle = when {
+                                        isYouTube -> ep.title
+                                        isSingleMovie -> detail.title
+                                        else -> "${detail.title} - $epItemTitle"
+                                    }
                                     navController.navigate(
                                         Screen.Player.createRoute(
                                             category = detail.category.id,

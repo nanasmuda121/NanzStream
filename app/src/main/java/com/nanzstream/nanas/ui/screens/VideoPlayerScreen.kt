@@ -366,11 +366,26 @@ fun VideoPlayerScreen(
                     } else {
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                     }
+                    val dsHeaders = mutableMapOf<String, String>()
+                    if (category == CategoryType.MOVIES || playableUrl.contains("hakunaymatata.com", ignoreCase = true) || playableUrl.contains("aoneroom.com", ignoreCase = true)) {
+                        dsHeaders["Referer"] = "https://themoviebox.xyz/"
+                        dsHeaders["Origin"] = "https://themoviebox.xyz"
+                    } else if (isYouTubeOrGoogle) {
+                        dsHeaders["Referer"] = "https://www.youtube.com/"
+                        dsHeaders["Origin"] = "https://www.youtube.com"
+                    } else if (defaultReferer.isNotBlank()) {
+                        dsHeaders["Referer"] = defaultReferer
+                    }
+
                     val dsFactory = DefaultHttpDataSource.Factory()
                         .setUserAgent(userAgent)
                         .setConnectTimeoutMs(20_000)
                         .setReadTimeoutMs(25_000)
                         .setAllowCrossProtocolRedirects(true)
+
+                    if (dsHeaders.isNotEmpty()) {
+                        dsFactory.setDefaultRequestProperties(dsHeaders)
+                    }
 
                     if (!chosenAudioUrl.isNullOrBlank()) {
                         // Multi-stream playback (e.g. YouTube video + separate AAC audio stream)
@@ -413,8 +428,19 @@ fun VideoPlayerScreen(
             }
 
             // Save to Continue Watching
-            val isMovie = episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true)
-            val lastTitle = if (isMovie) "Full Movie" else "Episode ${if (currentEpisode <= 0) 1 else currentEpisode}"
+            val isSingleMovie = (category == CategoryType.MOVIES && episodesList.size <= 1) || (episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
+            val lastTitle = when {
+                category == CategoryType.YOUTUBE -> "YouTube Video"
+                isSingleMovie -> "Full Movie"
+                else -> {
+                    val currentEpItem = episodesList.find { (it.episodeNumber.toIntOrNull() ?: -1) == currentEpisode }
+                    if (currentEpItem != null && currentEpItem.title.isNotBlank() && !currentEpItem.title.equals("Episode 0", ignoreCase = true)) {
+                        currentEpItem.title
+                    } else {
+                        "Episode ${if (currentEpisode <= 0) 1 else currentEpisode}"
+                    }
+                }
+            }
             NanzStreamApp.storage.saveContinueWatching(
                 ContinueWatchingItem(
                     mediaId = currentTargetUrl,
@@ -503,12 +529,19 @@ fun VideoPlayerScreen(
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1
                             )
-                            val isMovieContent = (category == CategoryType.MOVIES) || (episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
+                            val isMovieContent = (category == CategoryType.MOVIES && episodesList.size <= 1) || (episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
                             val isYouTubeContent = category == CategoryType.YOUTUBE
                             val epSubText = when {
-                                isMovieContent -> "Full Movie"
                                 isYouTubeContent -> "YouTube Video"
-                                else -> "Episode ${if (currentEpisode <= 0) 1 else currentEpisode}"
+                                isMovieContent -> "Full Movie"
+                                else -> {
+                                    val currentEpItem = episodesList.find { (it.episodeNumber.toIntOrNull() ?: -1) == currentEpisode }
+                                    if (currentEpItem != null && currentEpItem.title.isNotBlank() && !currentEpItem.title.equals("Episode 0", ignoreCase = true)) {
+                                        currentEpItem.title
+                                    } else {
+                                        "Episode ${if (currentEpisode <= 0) 1 else currentEpisode}"
+                                    }
+                                }
                             }
                             Text(
                                 text = epSubText,
@@ -681,16 +714,19 @@ fun VideoPlayerScreen(
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                        // Title & Subtitle
-                        Text(
-                            text = displayTitle,
-                            color = Color.White,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        val isMovieBelow = (category == CategoryType.MOVIES) || (episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
+                        val isSingleMovie = (category == CategoryType.MOVIES && episodesList.size <= 1) || (episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
                         val isYouTubeBelow = category == CategoryType.YOUTUBE
+
+                        if (!isYouTubeBelow) {
+                            // Title & Subtitle
+                            Text(
+                                text = displayTitle,
+                                color = Color.White,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
 
                         if (isYouTubeBelow) {
                             // 100% Dedicated YouTube Player UI!
@@ -1088,7 +1124,7 @@ fun VideoPlayerScreen(
                         } else {
                             // Standard Anime, Donghua, Movies layout below player
                             val playingText = when {
-                                isMovieBelow -> "Sedang Memutar: Full Movie"
+                                isSingleMovie -> "Sedang Memutar: Full Movie"
                                 else -> "Sedang Memutar: Episode ${if (currentEpisode <= 0) 1 else currentEpisode}"
                             }
                             Text(
@@ -1140,7 +1176,7 @@ fun VideoPlayerScreen(
                             }
 
                             // Next / Prev Episode Nav Buttons (Anime / Donghua with multi-episodes)
-                            if (!isMovieBelow && episodesList.size > 1) {
+                            if (!isSingleMovie && episodesList.size > 1) {
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1230,112 +1266,114 @@ fun VideoPlayerScreen(
                             }
                         }
 
-                        if (isMovieBelow && episodesList.size <= 1) {
-                            Spacer(modifier = Modifier.height(20.dp))
-                            Text(
-                                text = "INFORMASI FILM",
-                                color = TextDim,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(SurfaceElevated)
-                                    .padding(14.dp)
-                            ) {
+                        if (!isYouTubeBelow) {
+                            if (isSingleMovie) {
+                                Spacer(modifier = Modifier.height(20.dp))
                                 Text(
-                                    text = "Film ini tersedia dalam format Full Movie langsung untuk ditonton. Nikmati pengalaman streaming lancar dan gunakan fitur PiP atau layar penuh untuk pengalaman terbaik.",
-                                    color = TextMuted,
-                                    fontSize = 13.sp,
-                                    lineHeight = 18.sp
-                                )
-                            }
-                        } else {
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            // Scrollable Episode Grid Header
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "DAFTAR EPISODE",
+                                    text = "INFORMASI FILM",
                                     color = TextDim,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 1.sp
                                 )
-                                if (episodesList.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(SurfaceElevated)
+                                        .padding(14.dp)
+                                ) {
                                     Text(
-                                        text = "${episodesList.size} Episode",
+                                        text = "Film ini tersedia dalam format Full Movie langsung untuk ditonton. Nikmati pengalaman streaming lancar dan gunakan fitur PiP atau layar penuh untuk pengalaman terbaik.",
                                         color = TextMuted,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
+                                        fontSize = 13.sp,
+                                        lineHeight = 18.sp
                                     )
                                 }
-                            }
+                            } else {
+                                Spacer(modifier = Modifier.height(24.dp))
 
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            // Episode Chips Grid (5 columns per row, scrollable without disturbing player)
-                            val displayEps = if (episodesList.isNotEmpty()) episodesList else {
-                                val count = maxOf(currentEpisode, 12)
-                                (1..count).map {
-                                    EpisodeItem(id = "$it", episodeNumber = "$it", title = "Episode $it", url = targetUrl)
-                                }
-                            }
-
-                            displayEps.chunked(5).forEach { rowEps ->
+                                // Scrollable Episode Grid Header
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    rowEps.forEach { ep ->
-                                        val epNum = ep.episodeNumber.toIntOrNull()
-                                            ?: Regex("""\b(\d+)\b""").find(ep.title)?.groupValues?.get(1)?.toIntOrNull()
-                                            ?: Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(ep.url)?.groupValues?.get(1)?.toIntOrNull()
-                                            ?: 1
-                                        val isSelected = epNum == currentEpisode
-
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(44.dp)
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .border(
-                                                    1.5.dp,
-                                                    if (isSelected) Color.White else BorderHairline,
-                                                    RoundedCornerShape(10.dp)
-                                                )
-                                                .background(if (isSelected) Color.White else SurfaceElevated)
-                                                .clickable {
-                                                    currentEpisode = epNum
-                                                    if (ep.url.isNotBlank() && ep.url.startsWith("http")) {
-                                                        currentTargetUrl = ep.url
-                                                    }
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            val isMovieChip = ep.title.contains("Movie", ignoreCase = true) || ep.episodeNumber.equals("Movie", ignoreCase = true)
-                                            val displayEpNumber = if (isMovieChip) "Movie" else if (ep.episodeNumber == "0" || epNum <= 0) "1" else ep.episodeNumber.ifBlank { "$epNum" }
-                                            Text(
-                                                text = displayEpNumber,
-                                                color = if (isSelected) CanvasBlack else TextPrimary,
-                                                fontSize = 13.sp,
-                                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
-                                            )
-                                        }
-                                    }
-                                    repeat(5 - rowEps.size) {
-                                        Spacer(modifier = Modifier.weight(1f))
+                                    Text(
+                                        text = "DAFTAR EPISODE",
+                                        color = TextDim,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.sp
+                                    )
+                                    if (episodesList.isNotEmpty()) {
+                                        Text(
+                                            text = "${episodesList.size} Episode",
+                                            color = TextMuted,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
                                     }
                                 }
-                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                // Episode Chips Grid (5 columns per row, scrollable without disturbing player)
+                                val displayEps = if (episodesList.isNotEmpty()) episodesList else {
+                                    val count = maxOf(currentEpisode, 12)
+                                    (1..count).map {
+                                        EpisodeItem(id = "$it", episodeNumber = "$it", title = "Episode $it", url = targetUrl)
+                                    }
+                                }
+
+                                displayEps.chunked(5).forEach { rowEps ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        rowEps.forEach { ep ->
+                                            val epNum = ep.episodeNumber.toIntOrNull()
+                                                ?: Regex("""\b(\d+)\b""").find(ep.title)?.groupValues?.get(1)?.toIntOrNull()
+                                                ?: Regex("""episode-(\d+)""", RegexOption.IGNORE_CASE).find(ep.url)?.groupValues?.get(1)?.toIntOrNull()
+                                                ?: 1
+                                            val isSelected = epNum == currentEpisode
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(44.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .border(
+                                                        1.5.dp,
+                                                        if (isSelected) Color.White else BorderHairline,
+                                                        RoundedCornerShape(10.dp)
+                                                    )
+                                                    .background(if (isSelected) Color.White else SurfaceElevated)
+                                                    .clickable {
+                                                        currentEpisode = epNum
+                                                        if (ep.url.isNotBlank() && ep.url.startsWith("http")) {
+                                                            currentTargetUrl = ep.url
+                                                        }
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                val isMovieChip = ep.title.contains("Movie", ignoreCase = true) || ep.episodeNumber.equals("Movie", ignoreCase = true)
+                                                val displayEpNumber = if (isMovieChip) "Movie" else if (ep.episodeNumber == "0" || epNum <= 0) "1" else ep.episodeNumber.ifBlank { "$epNum" }
+                                                Text(
+                                                    text = displayEpNumber,
+                                                    color = if (isSelected) CanvasBlack else TextPrimary,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
+                                        repeat(5 - rowEps.size) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
                             }
                         }
 

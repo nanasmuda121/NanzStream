@@ -292,23 +292,24 @@ object YouTubeScraper {
             val relatedVideos = mutableListOf<EpisodeItem>()
             try {
                 val nextBody = JSONObject().apply {
-                    put("context", createWebContext())
+                    put("context", createIosContext())
                     put("videoId", cleanId)
                 }
-                val nextJson = postJson("next", nextBody)
+                val nextJson = postJson("next", nextBody, isIos = true)
                 val nextStr = nextJson?.toString() ?: ""
                 val avatarMatch = Regex("""(https?:)?//yt3\.(?:ggpht\.com|googleusercontent\.com)/[a-zA-Z0-9_\-\/=]+""").find(nextStr)
                 if (avatarMatch != null) {
                     channelAvatar = fixUrl(avatarMatch.value)
                 }
 
-                // Extract related videos with title and thumbnail
-                val vidsMatches = Regex("""\"compactVideoRenderer\":\{.*?\"videoId\":\"([a-zA-Z0-9_\-]{11})\".*?\"title\":\{\"simpleText\":\"([^\"]+)\"\}""", RegexOption.DOT_MATCHES_ALL).findAll(nextStr)
+                // 1. Primary: Extract related videos with videoTitle & ownerDisplayName from iOS next endpoint
+                val vidsMatches = Regex("""\"videoId\":\"([a-zA-Z0-9_\-]{11})\".*?\"videoTitle\":\"([^\"]+)\"(?:.*?\"ownerDisplayName\":\"([^\"]+)\")?""").findAll(nextStr)
                 var count = 1
                 for (m in vidsMatches) {
                     val rId = m.groupValues[1]
-                    val rTitle = m.groupValues[2]
-                    if (rId != cleanId && !relatedVideos.any { it.url.contains(rId) }) {
+                    val rTitle = m.groupValues[2].trim()
+                    val rOwner = m.groupValues.getOrNull(3)?.trim()?.ifBlank { author } ?: author
+                    if (rId != cleanId && rTitle.isNotBlank() && !rTitle.equals("Simpan", ignoreCase = true) && !relatedVideos.any { it.url.contains(rId) }) {
                         count++
                         relatedVideos.add(
                             EpisodeItem(
@@ -317,18 +318,20 @@ object YouTubeScraper {
                                 title = rTitle,
                                 url = "https://www.youtube.com/watch?v=$rId",
                                 thumbnail = "https://i.ytimg.com/vi/$rId/hqdefault.jpg",
-                                channelTitle = author
+                                channelTitle = rOwner
                             )
                         )
                         if (relatedVideos.size >= 25) break
                     }
                 }
+
+                // 2. Fallback: Parse structured title if videoTitle wasn't matched
                 if (relatedVideos.isEmpty()) {
-                    val fallbackMatches = Regex("\"videoId\":\"([a-zA-Z0-9_\\-]{11})\".*?\"text\":\"([^\"]+)\"").findAll(nextStr)
+                    val fallbackMatches = Regex("""\"videoId\":\"([a-zA-Z0-9_\-]{11})\".*?\"title\":\{(?:\"runs\":\[\{\"text\":\"([^\"]+)\"\}|\"simpleText\":\"([^\"]+)\")""", RegexOption.DOT_MATCHES_ALL).findAll(nextStr)
                     for (m in fallbackMatches) {
                         val rId = m.groupValues[1]
-                        val rTitle = m.groupValues[2]
-                        if (rId != cleanId && !relatedVideos.any { it.url.contains(rId) }) {
+                        val rTitle = (m.groupValues[2].ifBlank { m.groupValues.getOrNull(3) ?: "" }).trim()
+                        if (rId != cleanId && rTitle.isNotBlank() && !rTitle.contains(":") && !rTitle.equals("Simpan", ignoreCase = true) && !relatedVideos.any { it.url.contains(rId) }) {
                             count++
                             relatedVideos.add(
                                 EpisodeItem(
@@ -342,6 +345,23 @@ object YouTubeScraper {
                             )
                             if (relatedVideos.size >= 25) break
                         }
+                    }
+                }
+
+                // 3. Fallback: Search related content if next returned 0 videos
+                if (relatedVideos.isEmpty()) {
+                    val searchVids = search(title)
+                    searchVids.filter { it.id != cleanId }.take(20).forEachIndexed { idx, vid ->
+                        relatedVideos.add(
+                            EpisodeItem(
+                                id = vid.url ?: "https://www.youtube.com/watch?v=${vid.id}",
+                                episodeNumber = (idx + 2).toString(),
+                                title = vid.title,
+                                url = vid.url ?: "https://www.youtube.com/watch?v=${vid.id}",
+                                thumbnail = vid.thumbnail ?: "https://i.ytimg.com/vi/${vid.id}/hqdefault.jpg",
+                                channelTitle = vid.channelTitle ?: author
+                            )
+                        )
                     }
                 }
             } catch (e: Exception) {
@@ -575,6 +595,8 @@ object YouTubeScraper {
                 }
 
                 // Collect video formats with direct MP4 url
+                // CRITICAL: Filter out AV1 (av01) codec because most Android devices lack AV1 hardware decoder!
+                // Prioritize AVC1 (H.264: itag 137, 136, 135, 134, etc.) supported natively on 100% of Android devices.
                 for (i in 0 until adaptiveArr.length()) {
                     val af = adaptiveArr.getJSONObject(i)
                     val url = af.optString("url")
@@ -582,7 +604,7 @@ object YouTubeScraper {
                     val qLabel = af.optString("qualityLabel")
                     val itag = af.optInt("itag")
 
-                    if (url.isNotBlank() && mime.contains("video/mp4") && qLabel.isNotBlank()) {
+                    if (url.isNotBlank() && mime.contains("video/mp4") && qLabel.isNotBlank() && !mime.contains("av01", ignoreCase = true)) {
                         if (!videoFormats.any { it.first == qLabel }) {
                             videoFormats.add(Triple(qLabel, url, itag))
                             downloadItems.add(
@@ -608,7 +630,7 @@ object YouTubeScraper {
                 )
             }
 
-            // Check progressive formats (audio+video in 1 stream)
+            // Check progressive formats (audio+video in 1 stream, e.g. itag 18=360p, 22=720p)
             var directProgressiveUrl: String? = null
             if (progressiveArr != null) {
                 for (i in 0 until progressiveArr.length()) {
@@ -623,11 +645,23 @@ object YouTubeScraper {
 
             val servers = mutableListOf<StreamServerItem>()
 
-            // 1. If progressive direct MP4 exists (single file with video + audio)
+            // 1. Google HLS Multi-Quality is the gold standard for YouTube: combines 1080p/720p/480p H.264 + synced AAC audio natively
+            if (!hlsManifest.isNullOrBlank() && hlsManifest.startsWith("http")) {
+                servers.add(
+                    StreamServerItem(
+                        name = "Google HLS Auto (Multi-Quality)",
+                        url = hlsManifest,
+                        isDirectHls = true,
+                        audioUrl = null
+                    )
+                )
+            }
+
+            // 2. Progressive direct MP4 (audio + video in single file)
             if (!directProgressiveUrl.isNullOrBlank()) {
                 servers.add(
                     StreamServerItem(
-                        name = "YouTube Direct MP4",
+                        name = "YouTube Direct MP4 (Universal)",
                         url = directProgressiveUrl,
                         isDirectHls = false,
                         audioUrl = null
@@ -635,29 +669,19 @@ object YouTubeScraper {
                 )
             }
 
-            // 2. Add adaptive MP4 servers (merged video + audio via ExoPlayer MergingMediaSource)
-            // Sort by resolution: 1080p, 720p, 480p, 360p, 240p
-            videoFormats.sortedByDescending { triple ->
-                Regex("""(\d+)p""").find(triple.first)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            }.forEach { triple ->
+            // 3. Adaptive H.264 MP4 streams (720p, 1080p, 480p, 360p) merged with AAC audio
+            videoFormats.sortedWith(
+                compareByDescending<Triple<String, String, Int>> { triple ->
+                    val p = Regex("""(\d+)p""").find(triple.first)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                    if (p == 720) 2000 else if (p == 1080) 1900 else p
+                }
+            ).forEach { triple ->
                 servers.add(
                     StreamServerItem(
                         name = "YouTube ${triple.first} MP4 (Direct)",
                         url = triple.second,
                         isDirectHls = false,
                         audioUrl = bestAudioUrl
-                    )
-                )
-            }
-
-            // 3. If HLS manifest is available, add as fallback at the end
-            if (!hlsManifest.isNullOrBlank() && hlsManifest.startsWith("http")) {
-                servers.add(
-                    StreamServerItem(
-                        name = "Google HLS Stream (Fallback)",
-                        url = hlsManifest,
-                        isDirectHls = true,
-                        audioUrl = null
                     )
                 )
             }
