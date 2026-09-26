@@ -30,7 +30,9 @@ data class MediaItem(
     val synopsis: String? = null,
     val rating: String? = null,
     val year: String? = null,
-    val genres: List<String> = emptyList()
+    val genres: List<String> = emptyList(),
+    val channelAvatar: String? = null,
+    val channelTitle: String? = null
 )
 
 data class MediaDetail(
@@ -46,7 +48,9 @@ data class MediaDetail(
     val releaseDate: String? = null,
     val totalEpisodes: String? = null,
     val episodes: List<EpisodeItem> = emptyList(),
-    val chapters: List<MangaChapterItem> = emptyList()
+    val chapters: List<MangaChapterItem> = emptyList(),
+    val channelAvatar: String? = null,
+    val channelTitle: String? = null
 )
 
 data class EpisodeItem(
@@ -54,7 +58,10 @@ data class EpisodeItem(
     val episodeNumber: String,
     val title: String,
     val url: String,
-    val date: String? = null
+    val date: String? = null,
+    val thumbnail: String? = null,
+    val duration: String? = null,
+    val channelTitle: String? = null
 )
 
 data class MangaChapterItem(

@@ -59,6 +59,17 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbUp
+import android.content.Intent
+import coil.compose.AsyncImage
+import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -124,6 +135,7 @@ fun VideoPlayerScreen(
     var currentEpisode by remember { mutableIntStateOf(initialEpisode) }
     var currentTargetUrl by remember { mutableStateOf(targetUrl) }
     var episodesList by remember { mutableStateOf<List<EpisodeItem>>(emptyList()) }
+    var mediaDetail by remember { mutableStateOf<MediaDetail?>(null) }
 
     var streamResult by remember { mutableStateOf<StreamResult?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -288,12 +300,15 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Fetch full episode list from series detail
-    LaunchedEffect(targetUrl) {
+    // Fetch full episode list and media detail
+    LaunchedEffect(currentTargetUrl) {
         try {
-            val detail = repository.getDetail(category, targetUrl)
-            if (detail != null && detail.episodes.isNotEmpty()) {
-                episodesList = detail.episodes
+            val detail = repository.getDetail(category, currentTargetUrl)
+            if (detail != null) {
+                mediaDetail = detail
+                if (detail.episodes.isNotEmpty()) {
+                    episodesList = detail.episodes
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -327,31 +342,46 @@ fun VideoPlayerScreen(
                 val playableUrl = StreamResolver.resolveToDirectStream(chosenServerUrl, defaultReferer)
 
                 if (playableUrl.isNotBlank()) {
+                    val isYouTubeOrGoogle = category == CategoryType.YOUTUBE || playableUrl.contains("googlevideo.com", ignoreCase = true)
+                    val userAgent = if (isYouTubeOrGoogle) {
+                        "com.google.ios.youtube/21.03.2 (iPhone16,2; U; CPU iOS 18_7_2 like Mac OS X; id_ID)"
+                    } else {
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                    }
+                    val dsFactory = DefaultHttpDataSource.Factory()
+                        .setUserAgent(userAgent)
+                        .setConnectTimeoutMs(20_000)
+                        .setReadTimeoutMs(25_000)
+                        .setAllowCrossProtocolRedirects(true)
+
                     if (!chosenAudioUrl.isNullOrBlank()) {
                         // Multi-stream playback (e.g. YouTube video + separate AAC audio stream)
-                        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-                            .setUserAgent("com.google.ios.youtube/21.03.2 (iPhone16,2; U; CPU iOS 18_7_2 like Mac OS X)")
-                            .setConnectTimeoutMs(20_000)
-                            .setReadTimeoutMs(25_000)
-                            .setAllowCrossProtocolRedirects(true)
-
-                        val videoSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                        val videoSource = ProgressiveMediaSource.Factory(dsFactory)
                             .createMediaSource(MediaItem.fromUri(playableUrl))
-                        val audioSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                        val audioSource = ProgressiveMediaSource.Factory(dsFactory)
                             .createMediaSource(MediaItem.fromUri(chosenAudioUrl))
 
                         val mergedSource = MergingMediaSource(true, videoSource, audioSource)
                         exoPlayer.setMediaSource(mergedSource)
                     } else {
-                        val mediaItemBuilder = MediaItem.Builder().setUri(playableUrl)
-                        if (playableUrl.contains(".mpd", ignoreCase = true)) {
-                            mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
-                        } else if (playableUrl.contains(".m3u8", ignoreCase = true)) {
-                            mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
-                        } else if (playableUrl.contains(".mp4", ignoreCase = true)) {
-                            mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MP4)
+                        val isHls = playableUrl.contains(".m3u8", ignoreCase = true) || playableUrl.contains("hls_variant", ignoreCase = true)
+                        if (isHls) {
+                            val mediaItem = MediaItem.Builder()
+                                .setUri(playableUrl)
+                                .setMimeType(MimeTypes.APPLICATION_M3U8)
+                                .build()
+                            val hlsSource = HlsMediaSource.Factory(dsFactory).createMediaSource(mediaItem)
+                            exoPlayer.setMediaSource(hlsSource)
+                        } else {
+                            val mediaItemBuilder = MediaItem.Builder().setUri(playableUrl)
+                            if (playableUrl.contains(".mpd", ignoreCase = true)) {
+                                mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
+                            } else {
+                                mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MP4)
+                            }
+                            val progSource = ProgressiveMediaSource.Factory(dsFactory).createMediaSource(mediaItemBuilder.build())
+                            exoPlayer.setMediaSource(progSource)
                         }
-                        exoPlayer.setMediaItem(mediaItemBuilder.build())
                     }
                     exoPlayer.prepare()
                     exoPlayer.play()
@@ -643,219 +673,539 @@ fun VideoPlayerScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         val isMovieBelow = (category == CategoryType.MOVIES) || (episodesList.size <= 1 && (displayTitle.contains("Movie", ignoreCase = true) || episodesList.firstOrNull()?.title?.contains("Movie", ignoreCase = true) == true))
                         val isYouTubeBelow = category == CategoryType.YOUTUBE
-                        val playingText = when {
-                            isMovieBelow -> "Sedang Memutar: Full Movie"
-                            isYouTubeBelow -> "Sedang Memutar: YouTube Video"
-                            else -> "Sedang Memutar: Episode ${if (currentEpisode <= 0) 1 else currentEpisode}"
-                        }
-                        Text(
-                            text = playingText,
-                            color = TextMuted,
-                            fontSize = 13.sp
-                        )
 
-                        val uriHandler = LocalUriHandler.current
-                        val downloads = streamResult?.downloads.orEmpty()
-                        if (downloads.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(14.dp))
+                        if (isYouTubeBelow) {
+                            // 100% Dedicated YouTube Player UI!
                             Text(
-                                text = "PILIHAN UNDUH (MP4 / AUDIO)",
-                                color = TextDim,
-                                fontSize = 11.sp,
+                                text = displayTitle,
+                                color = Color.White,
+                                fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
+                                lineHeight = 22.sp
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxWidth()
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${mediaDetail?.rating ?: "YouTube Video"} • ${mediaDetail?.status ?: ""}",
+                                color = TextMuted,
+                                fontSize = 12.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Official YouTube Channel Bar (Avatar, Channel Name, Subscribe Button)
+                            val channelName = mediaDetail?.channelTitle ?: "YouTube Channel"
+                            val channelAvatar = mediaDetail?.channelAvatar
+                            var isSubscribed by remember { mutableStateOf(false) }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(SurfaceElevated)
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                items(downloads) { dl ->
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .border(1.dp, GlassBorder, RoundedCornerShape(8.dp))
-                                            .background(SurfaceElevated)
-                                            .clickable {
-                                                try {
-                                                    uriHandler.openUri(dl.url)
-                                                } catch (e: Exception) {
-                                                    e.printStackTrace()
-                                                }
-                                            }
-                                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                                    ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    if (!channelAvatar.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = channelAvatar,
+                                            contentDescription = channelName,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .clip(CircleShape)
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF272727)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = channelName.firstOrNull()?.uppercase() ?: "Y",
+                                                color = Color.White,
+                                                fontSize = 18.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+
+                                    Column {
                                         Text(
-                                            text = "📥 ${dl.name}",
+                                            text = channelName,
+                                            color = Color.White,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = mediaDetail?.status ?: "Channel YouTube",
+                                            color = TextMuted,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+
+                                // YouTube Subscribe Button (Red pill or Subscribed state)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(if (isSubscribed) Color(0xFF272727) else Color(0xFFCC0000))
+                                        .clickable { isSubscribed = !isSubscribed }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (isSubscribed) {
+                                            Icon(
+                                                imageVector = Icons.Default.Notifications,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = if (isSubscribed) "DISUBSCRIBE" else "SUBSCRIBE",
                                             color = Color.White,
                                             fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 0.5.sp
                                         )
                                     }
                                 }
                             }
-                        }
 
-                        // Next / Prev Episode Nav Buttons (Anime / Donghua with multi-episodes)
-                        if (!isYouTubeBelow && !isMovieBelow && episodesList.size > 1) {
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // YouTube Action Pills Row (Like, Dislike, Bagikan, Unduh MP4)
+                            var isLiked by remember { mutableStateOf(false) }
+                            var isDisliked by remember { mutableStateOf(false) }
+
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Prev Ep Button
+                                // Like Pill
                                 Row(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .height(46.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
-                                        .background(if (currentEpisode > 1) SurfaceElevated else Color(0x0AFFFFFF))
-                                        .clickable(enabled = currentEpisode > 1) {
-                                            val prevEp = currentEpisode - 1
-                                            currentEpisode = prevEp
-                                            val targetEp = episodesList.find {
-                                                (it.episodeNumber.toIntOrNull() ?: -1) == prevEp
-                                            }
-                                            if (targetEp != null && targetEp.url.isNotBlank()) {
-                                                currentTargetUrl = targetEp.url
-                                            }
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(if (isLiked) Color.White else SurfaceElevated)
+                                        .clickable {
+                                            isLiked = !isLiked
+                                            if (isLiked) isDisliked = false
                                         }
-                                        .padding(horizontal = 16.dp),
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.SkipPrevious,
-                                        contentDescription = "Episode Sebelumnya",
-                                        tint = if (currentEpisode > 1) Color.White else TextMuted,
-                                        modifier = Modifier.size(20.dp)
+                                        imageVector = Icons.Default.ThumbUp,
+                                        contentDescription = "Suka",
+                                        tint = if (isLiked) Color.Black else Color.White,
+                                        modifier = Modifier.size(16.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Prev Ep",
-                                        color = if (currentEpisode > 1) Color.White else TextMuted,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
+                                        text = if (isLiked) "Disukai" else "Suka",
+                                        color = if (isLiked) Color.Black else Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
 
-                                Spacer(modifier = Modifier.width(12.dp))
+                                // Dislike Pill
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(if (isDisliked) Color.White else SurfaceElevated)
+                                        .clickable {
+                                            isDisliked = !isDisliked
+                                            if (isDisliked) isLiked = false
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ThumbDown,
+                                        contentDescription = "Tidak Suka",
+                                        tint = if (isDisliked) Color.Black else Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
 
-                                // Next Ep Button
-                                val maxEp = if (episodesList.isNotEmpty()) {
-                                    episodesList.maxOfOrNull { it.episodeNumber.toIntOrNull() ?: 0 } ?: 9999
-                                } else 9999
-
+                                // Share Pill
+                                val shareIntent = remember(displayTitle, currentTargetUrl) {
+                                    Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, displayTitle)
+                                        putExtra(Intent.EXTRA_TEXT, "$displayTitle\n$currentTargetUrl")
+                                    }
+                                }
                                 Row(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .height(46.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
-                                        .background(if (currentEpisode < maxEp) SurfaceElevated else Color(0x0AFFFFFF))
-                                        .clickable(enabled = currentEpisode < maxEp) {
-                                            val nextEp = currentEpisode + 1
-                                            currentEpisode = nextEp
-                                            val targetEp = episodesList.find {
-                                                (it.episodeNumber.toIntOrNull() ?: -1) == nextEp
-                                            }
-                                            if (targetEp != null && targetEp.url.isNotBlank()) {
-                                                currentTargetUrl = targetEp.url
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(SurfaceElevated)
+                                        .clickable {
+                                            try {
+                                                context.startActivity(Intent.createChooser(shareIntent, "Bagikan Video YouTube"))
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
                                             }
                                         }
-                                        .padding(horizontal = 16.dp),
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Text(
-                                        text = "Next Ep",
-                                        color = if (currentEpisode < maxEp) Color.White else TextMuted,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
                                     Icon(
-                                        imageVector = Icons.Default.SkipNext,
-                                        contentDescription = "Episode Selanjutnya",
-                                        tint = if (currentEpisode < maxEp) Color.White else TextMuted,
-                                        modifier = Modifier.size(20.dp)
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "Bagikan",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
                                     )
+                                    Text(
+                                        text = "Bagikan",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+
+                                // Download Pill (Direct MP4 from NewPipe extractor)
+                                val uriHandler = LocalUriHandler.current
+                                val downloads = streamResult?.downloads.orEmpty()
+                                if (downloads.isNotEmpty()) {
+                                    Row(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .background(Color(0xFF2E7D32))
+                                            .clickable {
+                                                try {
+                                                    uriHandler.openUri(downloads.first().url)
+                                                } catch (e: Exception) {
+                                                    e.printStackTrace()
+                                                }
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Download,
+                                            contentDescription = "Unduh",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "Unduh MP4",
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
-                        }
 
-                        if (isYouTubeBelow) {
-                            // YouTube: List of related / channel videos with title and play action
-                            Spacer(modifier = Modifier.height(20.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            // Download options list if multiple resolutions available
+                            val uriHandler = LocalUriHandler.current
+                            val downloads = streamResult?.downloads.orEmpty()
+                            if (downloads.size > 1) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    items(downloads) { dl ->
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .border(1.dp, GlassBorder, RoundedCornerShape(8.dp))
+                                                .background(SurfaceElevated)
+                                                .clickable {
+                                                    try {
+                                                        uriHandler.openUri(dl.url)
+                                                    } catch (e: Exception) {
+                                                        e.printStackTrace()
+                                                    }
+                                                }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        ) {
+                                            Text(
+                                                text = "📥 ${dl.name}",
+                                                color = Color.White,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Expandable Description Box
+                            val synopsisText = mediaDetail?.synopsis.orEmpty()
+                            if (synopsisText.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                var isExpanded by remember { mutableStateOf(false) }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(SurfaceElevated)
+                                        .clickable { isExpanded = !isExpanded }
+                                        .padding(12.dp)
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = synopsisText,
+                                            color = Color(0xFFDDDDDD),
+                                            fontSize = 12.sp,
+                                            lineHeight = 17.sp,
+                                            maxLines = if (isExpanded) Int.MAX_VALUE else 3,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = if (isExpanded) "Tampilkan lebih sedikit" else "...lebih banyak",
+                                            color = TextMuted,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+
+                            // YouTube Related / Up Next Videos (Horizontal 16:9 cards with thumbnail)
+                            val relatedVids = episodesList.filter { it.url != currentTargetUrl }
+                            if (relatedVids.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(18.dp))
                                 Text(
-                                    text = "VIDEO TERKAIT / DARI CHANNEL",
+                                    text = "VIDEO BERIKUTNYA / TERKAIT",
                                     color = TextDim,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 1.sp
                                 )
-                                if (episodesList.isNotEmpty()) {
-                                    Text(
-                                        text = "${episodesList.size} Video",
-                                        color = TextMuted,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                relatedVids.forEach { videoItem ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(SurfaceElevated)
+                                            .clickable {
+                                                currentTargetUrl = videoItem.url
+                                                currentEpisode = 1
+                                            }
+                                            .padding(8.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        // 16:9 Thumbnail
+                                        Box(
+                                            modifier = Modifier
+                                                .width(115.dp)
+                                                .height(65.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Color(0xFF1E1E1E))
+                                        ) {
+                                            if (!videoItem.thumbnail.isNullOrBlank()) {
+                                                AsyncImage(
+                                                    model = videoItem.thumbnail,
+                                                    contentDescription = videoItem.title,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.PlayArrow,
+                                                        contentDescription = null,
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(24.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                        // Title + Channel text
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = videoItem.title,
+                                                color = Color.White,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                lineHeight = 17.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(3.dp))
+                                            Text(
+                                                text = videoItem.channelTitle ?: channelName,
+                                                color = TextMuted,
+                                                fontSize = 11.sp,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Standard Anime, Donghua, Movies layout below player
+                            val playingText = when {
+                                isMovieBelow -> "Sedang Memutar: Full Movie"
+                                else -> "Sedang Memutar: Episode ${if (currentEpisode <= 0) 1 else currentEpisode}"
+                            }
+                            Text(
+                                text = playingText,
+                                color = TextMuted,
+                                fontSize = 13.sp
+                            )
+
+                            val uriHandler = LocalUriHandler.current
+                            val downloads = streamResult?.downloads.orEmpty()
+                            if (downloads.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = "PILIHAN UNDUH (MP4 / AUDIO)",
+                                    color = TextDim,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    items(downloads) { dl ->
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .border(1.dp, GlassBorder, RoundedCornerShape(8.dp))
+                                                .background(SurfaceElevated)
+                                                .clickable {
+                                                    try {
+                                                        uriHandler.openUri(dl.url)
+                                                    } catch (e: Exception) {
+                                                        e.printStackTrace()
+                                                    }
+                                                }
+                                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                        ) {
+                                            Text(
+                                                text = "📥 ${dl.name}",
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            episodesList.forEach { videoItem ->
-                                val isCurrentVideo = videoItem.url == currentTargetUrl
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .border(
-                                            1.dp,
-                                            if (isCurrentVideo) Color.White else BorderHairline,
-                                            RoundedCornerShape(10.dp)
-                                        )
-                                        .background(if (isCurrentVideo) Color(0x33FFFFFF) else SurfaceElevated)
-                                        .clickable {
-                                            currentTargetUrl = videoItem.url
-                                            currentEpisode = 1
-                                        }
-                                        .padding(12.dp)
+                            // Next / Prev Episode Nav Buttons (Anime / Donghua with multi-episodes)
+                            if (!isMovieBelow && episodesList.size > 1) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    // Prev Ep Button
                                     Row(
-                                        verticalAlignment = Alignment.CenterVertically
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(46.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
+                                            .background(if (currentEpisode > 1) SurfaceElevated else Color(0x0AFFFFFF))
+                                            .clickable(enabled = currentEpisode > 1) {
+                                                val prevEp = currentEpisode - 1
+                                                currentEpisode = prevEp
+                                                val targetEp = episodesList.find {
+                                                    (it.episodeNumber.toIntOrNull() ?: -1) == prevEp
+                                                }
+                                                if (targetEp != null && targetEp.url.isNotBlank()) {
+                                                    currentTargetUrl = targetEp.url
+                                                }
+                                            }
+                                            .padding(horizontal = 16.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(32.dp)
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(if (isCurrentVideo) Color.White else Color(0x22FFFFFF)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.PlayArrow,
-                                                contentDescription = "Putar",
-                                                tint = if (isCurrentVideo) Color.Black else Color.White,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.SkipPrevious,
+                                            contentDescription = "Episode Sebelumnya",
+                                            tint = if (currentEpisode > 1) Color.White else TextMuted,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = videoItem.title,
-                                            color = if (isCurrentVideo) Color.White else TextPrimary,
+                                            text = "Prev Ep",
+                                            color = if (currentEpisode > 1) Color.White else TextMuted,
                                             fontSize = 13.sp,
-                                            fontWeight = if (isCurrentVideo) FontWeight.Bold else FontWeight.Normal,
-                                            maxLines = 2
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    // Next Ep Button
+                                    val maxEp = if (episodesList.isNotEmpty()) {
+                                        episodesList.maxOfOrNull { it.episodeNumber.toIntOrNull() ?: 0 } ?: 9999
+                                    } else 9999
+
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(46.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
+                                            .background(if (currentEpisode < maxEp) SurfaceElevated else Color(0x0AFFFFFF))
+                                            .clickable(enabled = currentEpisode < maxEp) {
+                                                val nextEp = currentEpisode + 1
+                                                currentEpisode = nextEp
+                                                val targetEp = episodesList.find {
+                                                    (it.episodeNumber.toIntOrNull() ?: -1) == nextEp
+                                                }
+                                                if (targetEp != null && targetEp.url.isNotBlank()) {
+                                                    currentTargetUrl = targetEp.url
+                                                }
+                                            }
+                                            .padding(horizontal = 16.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Text(
+                                            text = "Next Ep",
+                                            color = if (currentEpisode < maxEp) Color.White else TextMuted,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.SkipNext,
+                                            contentDescription = "Episode Selanjutnya",
+                                            tint = if (currentEpisode < maxEp) Color.White else TextMuted,
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
                                 }

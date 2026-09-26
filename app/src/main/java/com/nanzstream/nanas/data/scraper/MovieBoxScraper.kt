@@ -137,17 +137,21 @@ object MovieBoxScraper {
             }
             val cached = cachedHomeSubjects?.find { it.slug == slug || it.id.contains(slug) }
 
-            // 2. Fetch full HTML SSR page for detail & video stream
+            // 2. Fetch API detail data first
+            val apiJson = fetchJson("$API_BASE/detail?detailPath=$slug")
+            val sub = apiJson?.optJSONObject("data")?.optJSONObject("subject")
+
+            var title = sub?.optString("title")?.ifBlank { null } ?: cached?.title ?: ""
+            var synopsis = sub?.optString("description")?.ifBlank { null } ?: cached?.synopsis ?: ""
+            var coverUrl = sub?.optJSONObject("cover")?.optString("url")?.ifBlank { null } ?: cached?.thumbnail ?: ""
+            var rating = sub?.optString("imdbRatingValue")?.ifBlank { null } ?: cached?.rating ?: "7.9"
+            var year = sub?.optString("releaseDate")?.take(4)?.ifBlank { null } ?: cached?.year ?: "2024"
+            var genres = sub?.optString("genre")?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: cached?.genres ?: listOf("Movie", "HD")
+            var videoStreamUrl = sub?.optJSONObject("trailer")?.optJSONObject("videoAddress")?.optString("url") ?: ""
+
+            // 3. Fetch full HTML SSR page for detail & video stream
             val detailUrl = "$BASE_URL/detail/$slug"
             val html = fetchHtml(detailUrl)
-
-            var title = cached?.title ?: ""
-            var synopsis = cached?.synopsis ?: ""
-            var coverUrl = cached?.thumbnail ?: ""
-            var rating = cached?.rating ?: "7.9"
-            var year = cached?.year ?: "2024"
-            var genres = cached?.genres ?: listOf("Movie", "Drama")
-            var videoStreamUrl = ""
 
             if (!html.isNullOrBlank()) {
                 val doc = Jsoup.parse(html)
@@ -171,30 +175,53 @@ object MovieBoxScraper {
                 }
 
                 // Extract direct Video stream from VideoObject json-ld
-                doc.select("script[type='application/ld+json']").forEach { script ->
-                    val data = script.data()
-                    if (data.contains("VideoObject")) {
-                        try {
-                            val j = JSONObject(data)
-                            if (j.optString("@type") == "VideoObject") {
-                                val cUrl = j.optString("contentUrl")
-                                if (cUrl.isNotBlank() && cUrl.startsWith("http")) {
-                                    videoStreamUrl = cUrl
+                if (videoStreamUrl.isBlank()) {
+                    doc.select("script[type='application/ld+json']").forEach { script ->
+                        val data = script.data()
+                        if (data.contains("VideoObject")) {
+                            try {
+                                val j = JSONObject(data)
+                                if (j.optString("@type") == "VideoObject") {
+                                    val cUrl = j.optString("contentUrl")
+                                    if (cUrl.isNotBlank() && cUrl.startsWith("http")) {
+                                        videoStreamUrl = cUrl
+                                    }
+                                    val desc = j.optString("description")
+                                    if (desc.isNotBlank() && synopsis.isBlank()) {
+                                        synopsis = desc
+                                    }
                                 }
-                                val desc = j.optString("description")
-                                if (desc.isNotBlank() && synopsis.isBlank()) {
-                                    synopsis = desc
-                                }
-                            }
-                        } catch (e: Exception) {}
+                            } catch (e: Exception) {}
+                        }
                     }
                 }
 
-                // Regex fallback for macdn mp4 trailer/stream
+                // Regex search for macdn mp4 trailer/stream in HTML or __NUXT_DATA__
                 if (videoStreamUrl.isBlank()) {
-                    val m = Regex("""\"(https://macdn\.aoneroom\.com/[^\"]+\.mp4)\"""").find(html)
+                    val m = Regex("""(https://macdn\.aoneroom\.com/[^\s\"\'<>]+\.mp4)""").find(html)
                     if (m != null) {
-                        videoStreamUrl = m.groupValues[1]
+                        videoStreamUrl = m.value
+                    }
+                }
+
+                // Generic video regex search (.mp4 or .m3u8)
+                if (videoStreamUrl.isBlank()) {
+                    val mGen = Regex("""(https?:[\\/]+[^\s\"\'<>]+\.(?:mp4|m3u8)[^\s\"\'<>]*)""").find(html)
+                    if (mGen != null) {
+                        videoStreamUrl = mGen.value
+                    }
+                }
+            }
+
+            // Fallback to videoPlayPage if still blank
+            if (videoStreamUrl.isBlank()) {
+                val subId = sub?.optString("subjectId") ?: ""
+                val playPageUrl = "$BASE_URL/spa/videoPlayPage/movies/$slug?id=$subId&type=%2Fmovie%2Fdetail&detailSe=0&detailEp=1&lang=id"
+                val playHtml = fetchHtml(playPageUrl)
+                if (!playHtml.isNullOrBlank()) {
+                    val mPlay = Regex("""(https://macdn\.aoneroom\.com/[^\s\"\'<>]+\.mp4)""").find(playHtml)
+                    if (mPlay != null) {
+                        videoStreamUrl = mPlay.value
                     }
                 }
             }
@@ -205,7 +232,7 @@ object MovieBoxScraper {
 
             val episodes = listOf(
                 EpisodeItem(
-                    id = "$BASE_URL/detail/$slug",
+                    id = if (videoStreamUrl.isNotBlank()) videoStreamUrl else "$BASE_URL/detail/$slug",
                     episodeNumber = "1",
                     title = "Full Movie",
                     url = if (videoStreamUrl.isNotBlank()) videoStreamUrl else "$BASE_URL/detail/$slug"
@@ -234,6 +261,26 @@ object MovieBoxScraper {
 
     suspend fun getStream(urlOrPath: String, episode: Int = 1): StreamResult? = withContext(Dispatchers.IO) {
         try {
+            // 1. If urlOrPath is already a direct playable video stream
+            if (urlOrPath.contains(".mp4", ignoreCase = true) ||
+                urlOrPath.contains(".m3u8", ignoreCase = true) ||
+                urlOrPath.contains("macdn.aoneroom.com", ignoreCase = true)
+            ) {
+                return@withContext StreamResult(
+                    title = "Full Movie HD",
+                    directHlsUrl = urlOrPath,
+                    iframePlayerUrl = null,
+                    servers = listOf(
+                        StreamServerItem(
+                            name = "Movie HD Direct MP4",
+                            url = urlOrPath,
+                            isDirectHls = urlOrPath.contains(".m3u8")
+                        )
+                    )
+                )
+            }
+
+            // 2. Otherwise resolve via slug & detail
             val slug = urlOrPath.removePrefix(BASE_URL)
                 .removePrefix("https://themoviebox.xyz")
                 .removePrefix("/id/detail/")
@@ -244,20 +291,22 @@ object MovieBoxScraper {
             val detail = getDetail(slug)
             val streamUrl = detail?.episodes?.firstOrNull()?.url
 
-            if (!streamUrl.isNullOrBlank() && streamUrl.startsWith("http")) {
+            if (!streamUrl.isNullOrBlank() && (streamUrl.contains(".mp4") || streamUrl.contains(".m3u8") || streamUrl.contains("macdn.aoneroom.com"))) {
                 StreamResult(
                     title = "${detail.title} - Full Movie",
                     directHlsUrl = streamUrl,
                     iframePlayerUrl = null,
                     servers = listOf(
                         StreamServerItem(
-                            name = "MovieBox Direct Stream",
+                            name = "MovieBox Direct MP4",
                             url = streamUrl,
-                            isDirectHls = false
+                            isDirectHls = streamUrl.contains(".m3u8")
                         )
                     )
                 )
-            } else null
+            } else {
+                null
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             null

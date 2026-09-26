@@ -23,7 +23,8 @@ object StreamResolver {
         // Already a direct stream
         if (cleanUrl.contains(".m3u8", ignoreCase = true) ||
             cleanUrl.contains(".mpd", ignoreCase = true) ||
-            cleanUrl.contains(".mp4", ignoreCase = true)
+            cleanUrl.contains(".mp4", ignoreCase = true) ||
+            cleanUrl.contains("googlevideo.com", ignoreCase = true)
         ) {
             return@withContext cleanUrl
         }

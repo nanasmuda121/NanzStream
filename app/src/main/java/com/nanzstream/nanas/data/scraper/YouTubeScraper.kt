@@ -122,7 +122,13 @@ object YouTubeScraper {
                                     ?.optJSONObject("thumbnail")
                                     ?.optJSONArray("thumbnails")
                                     ?.let { arr -> arr.optJSONObject(arr.length() - 1)?.optString("url") }
-                                val chThumb = fixUrl(chThumbRaw)
+                                var chThumb = fixUrl(chThumbRaw)
+                                if (chThumb.isBlank()) {
+                                    val match = Regex("""(https?:)?//yt3\.(?:ggpht\.com|googleusercontent\.com)/[a-zA-Z0-9_\-\/=]+""").find(vr.toString())
+                                    if (match != null) {
+                                        chThumb = fixUrl(match.value)
+                                    }
+                                }
 
                                 if (vId.isNotBlank() && !title.isNullOrBlank() && !list.any { it.id == vId }) {
                                     list.add(
@@ -136,7 +142,9 @@ object YouTubeScraper {
                                             badge = dur.ifBlank { "Video" },
                                             rating = views,
                                             synopsis = if (!channel.isNullOrBlank()) "Channel: $channel" else "",
-                                            genres = listOf("YouTube", channel ?: "Video")
+                                            genres = listOf("YouTube", channel ?: "Video"),
+                                            channelAvatar = chThumb.ifBlank { null },
+                                            channelTitle = channel
                                         )
                                     )
                                 }
@@ -149,7 +157,13 @@ object YouTubeScraper {
                                 val cTitle = cr.optJSONObject("title")?.optString("simpleText")
                                 val subs = cr.optJSONObject("subscriberCountText")?.optString("simpleText") ?: "Channel"
                                 val cThumbArr = cr.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                                val cThumb = fixUrl(cThumbArr?.optJSONObject(cThumbArr.length() - 1)?.optString("url"))
+                                var cThumb = fixUrl(cThumbArr?.optJSONObject(cThumbArr.length() - 1)?.optString("url"))
+                                if (cThumb.isBlank()) {
+                                    val match = Regex("""(https?:)?//yt3\.(?:ggpht\.com|googleusercontent\.com)/[a-zA-Z0-9_\-\/=]+""").find(cr.toString())
+                                    if (match != null) {
+                                        cThumb = fixUrl(match.value)
+                                    }
+                                }
 
                                 if (cId.isNotBlank() && !cTitle.isNullOrBlank() && !list.any { it.id == cId }) {
                                     list.add(
@@ -162,13 +176,61 @@ object YouTubeScraper {
                                             slug = cId,
                                             badge = "Channel",
                                             rating = subs,
-                                            genres = listOf("YouTube", "Channel")
+                                            genres = listOf("YouTube", "Channel"),
+                                            channelAvatar = cThumb.ifBlank { null },
+                                            channelTitle = cTitle
                                         )
                                     )
                                 }
                             }
                         }
                     }
+                }
+            }
+
+            // 3. Fallback & Shorts extraction from modern YouTube JSON (shortsLockupViewModel & reelItemRenderer)
+            val jsonStr = json.toString()
+            val shortsMatches = Regex("""\"shortsLockupViewModel\":\{.*?\"entityId\":\"[^\"]*?([a-zA-Z0-9_\-]{11})\".*?\"primaryText\":\{\"content\":\"([^\"]+)\"\}""", RegexOption.DOT_MATCHES_ALL).findAll(jsonStr)
+            for (sm in shortsMatches) {
+                val sId = sm.groupValues[1]
+                val sTitle = sm.groupValues[2]
+                if (sId.isNotBlank() && !list.any { it.id == sId }) {
+                    list.add(
+                        MediaItem(
+                            id = sId,
+                            title = sTitle,
+                            category = CategoryType.YOUTUBE,
+                            thumbnail = "https://i.ytimg.com/vi/$sId/hqdefault.jpg",
+                            url = "https://www.youtube.com/shorts/$sId",
+                            slug = sId,
+                            badge = "Shorts",
+                            rating = "Shorts",
+                            synopsis = "YouTube Shorts",
+                            genres = listOf("YouTube", "Shorts")
+                        )
+                    )
+                }
+            }
+
+            val reelMatches = Regex("""\"reelItemRenderer\":\{.*?\"videoId\":\"([a-zA-Z0-9_\-]{11})\".*?\"headline\":\{\"simpleText\":\"([^\"]+)\"\}""").findAll(jsonStr)
+            for (rm in reelMatches) {
+                val sId = rm.groupValues[1]
+                val sTitle = rm.groupValues[2]
+                if (sId.isNotBlank() && !list.any { it.id == sId }) {
+                    list.add(
+                        MediaItem(
+                            id = sId,
+                            title = sTitle,
+                            category = CategoryType.YOUTUBE,
+                            thumbnail = "https://i.ytimg.com/vi/$sId/hqdefault.jpg",
+                            url = "https://www.youtube.com/shorts/$sId",
+                            slug = sId,
+                            badge = "Shorts",
+                            rating = "Shorts",
+                            synopsis = "YouTube Shorts",
+                            genres = listOf("YouTube", "Shorts")
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -235,13 +297,13 @@ object YouTubeScraper {
                 }
                 val nextJson = postJson("next", nextBody)
                 val nextStr = nextJson?.toString() ?: ""
-                val avatarMatch = Regex("""\"avatar\":\{.*?\"url\":\"([^\"]+)\"""").find(nextStr)
+                val avatarMatch = Regex("""(https?:)?//yt3\.(?:ggpht\.com|googleusercontent\.com)/[a-zA-Z0-9_\-\/=]+""").find(nextStr)
                 if (avatarMatch != null) {
-                    channelAvatar = fixUrl(avatarMatch.groupValues[1])
+                    channelAvatar = fixUrl(avatarMatch.value)
                 }
 
-                // Extract related videos
-                val vidsMatches = Regex("""\"videoId\":\"([a-zA-Z0-9_\-]{11})\".*?\"text\":\"([^\"]+)\"""").findAll(nextStr)
+                // Extract related videos with title and thumbnail
+                val vidsMatches = Regex("""\"compactVideoRenderer\":\{.*?\"videoId\":\"([a-zA-Z0-9_\-]{11})\".*?\"title\":\{\"simpleText\":\"([^\"]+)\"\}""", RegexOption.DOT_MATCHES_ALL).findAll(nextStr)
                 var count = 1
                 for (m in vidsMatches) {
                     val rId = m.groupValues[1]
@@ -253,10 +315,33 @@ object YouTubeScraper {
                                 id = "https://www.youtube.com/watch?v=$rId",
                                 episodeNumber = count.toString(),
                                 title = rTitle,
-                                url = "https://www.youtube.com/watch?v=$rId"
+                                url = "https://www.youtube.com/watch?v=$rId",
+                                thumbnail = "https://i.ytimg.com/vi/$rId/hqdefault.jpg",
+                                channelTitle = author
                             )
                         )
-                        if (relatedVideos.size >= 15) break
+                        if (relatedVideos.size >= 25) break
+                    }
+                }
+                if (relatedVideos.isEmpty()) {
+                    val fallbackMatches = Regex("\"videoId\":\"([a-zA-Z0-9_\\-]{11})\".*?\"text\":\"([^\"]+)\"").findAll(nextStr)
+                    for (m in fallbackMatches) {
+                        val rId = m.groupValues[1]
+                        val rTitle = m.groupValues[2]
+                        if (rId != cleanId && !relatedVideos.any { it.url.contains(rId) }) {
+                            count++
+                            relatedVideos.add(
+                                EpisodeItem(
+                                    id = "https://www.youtube.com/watch?v=$rId",
+                                    episodeNumber = count.toString(),
+                                    title = rTitle,
+                                    url = "https://www.youtube.com/watch?v=$rId",
+                                    thumbnail = "https://i.ytimg.com/vi/$rId/hqdefault.jpg",
+                                    channelTitle = author
+                                )
+                            )
+                            if (relatedVideos.size >= 25) break
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -269,7 +354,10 @@ object YouTubeScraper {
                         id = "https://www.youtube.com/watch?v=$cleanId",
                         episodeNumber = "1",
                         title = title,
-                        url = "https://www.youtube.com/watch?v=$cleanId"
+                        url = "https://www.youtube.com/watch?v=$cleanId",
+                        thumbnail = thumb,
+                        channelTitle = author,
+                        duration = durMinutes
                     )
                 )
                 addAll(relatedVideos)
@@ -286,7 +374,9 @@ object YouTubeScraper {
                 status = "Durasi: $durMinutes",
                 rating = "${views}x ditonton",
                 totalEpisodes = if (relatedVideos.isNotEmpty()) "${episodes.size} Video" else "Video",
-                episodes = episodes
+                episodes = episodes,
+                channelAvatar = channelAvatar,
+                channelTitle = author
             )
         } catch (e: Exception) {
             e.printStackTrace()
@@ -408,7 +498,9 @@ object YouTubeScraper {
                 status = subs,
                 rating = "Channel",
                 totalEpisodes = "${episodes.size} Video",
-                episodes = episodes
+                episodes = episodes,
+                channelAvatar = avatar,
+                channelTitle = title
             )
         } catch (e: Exception) {
             e.printStackTrace()
@@ -424,15 +516,28 @@ object YouTubeScraper {
                 videoIdOrUrl.contains("youtu.be/") -> Regex("""youtu\.be/([a-zA-Z0-9_\-]+)""").find(videoIdOrUrl)?.groupValues?.get(1) ?: videoIdOrUrl
                 videoIdOrUrl.startsWith("http") -> videoIdOrUrl.substringAfterLast("/").substringBefore("?")
                 else -> videoIdOrUrl.trim()
-            }
+            }.substringBefore("?").substringBefore("&").trim()
 
-            val body = JSONObject().apply {
+            if (vId.isBlank()) return@withContext null
+
+            var body = JSONObject().apply {
                 put("context", createIosContext())
                 put("videoId", vId)
             }
 
-            val json = postJson("player", body, isIos = true) ?: return@withContext null
-            val sd = json.optJSONObject("streamingData")
+            var json = postJson("player", body, isIos = true)
+            var sd = json?.optJSONObject("streamingData")
+
+            // If iOS returned no formats, fallback to Web client
+            if (sd == null || (sd.optJSONArray("adaptiveFormats") == null && sd.optJSONArray("formats") == null && sd.optString("hlsManifestUrl").isBlank())) {
+                body = JSONObject().apply {
+                    put("context", createWebContext())
+                    put("videoId", vId)
+                }
+                json = postJson("player", body, isIos = false)
+                sd = json?.optJSONObject("streamingData")
+            }
+            if (sd == null) return@withContext null
             val title = json.optJSONObject("videoDetails")?.optString("title") ?: "YouTube Video"
 
             val hlsManifest = sd?.optString("hlsManifestUrl")
@@ -545,12 +650,11 @@ object YouTubeScraper {
                 )
             }
 
-            // 3. If HLS manifest is available, add as fallback
+            // 3. If HLS manifest is available, add as fallback at the end
             if (!hlsManifest.isNullOrBlank() && hlsManifest.startsWith("http")) {
                 servers.add(
-                    0,
                     StreamServerItem(
-                        name = "Google HLS Direct Stream",
+                        name = "Google HLS Stream (Fallback)",
                         url = hlsManifest,
                         isDirectHls = true,
                         audioUrl = null
