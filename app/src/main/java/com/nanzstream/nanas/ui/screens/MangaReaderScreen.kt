@@ -984,6 +984,8 @@ fun WebtoonHtmlReaderView(
                                         responseHeaders,
                                         body.byteStream()
                                     )
+                                } else {
+                                    resp.close()
                                 }
                             } catch (e: Exception) {
                                 e.printStackTrace()
@@ -1081,6 +1083,7 @@ fun buildMangaHtml(
                 <img src="${page.url}" 
                      $loadingAttr 
                      decoding="async" 
+                     referrerpolicy="no-referrer"
                      alt="Halaman ${page.page}"
                      onerror="if(!this.dataset.retried){this.dataset.retried='1';this.src='${page.url}';}" />
                 <div class="page-badge">${page.page} / ${pages.size}</div>

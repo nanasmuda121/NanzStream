@@ -69,7 +69,12 @@ object WebtoonBitmapDecoder {
             val cacheFile = File(cacheDir, md5(cleanUrl) + ".cache")
             if (cacheFile.exists() && cacheFile.length() > 0) {
                 val cachedSlices = decodeFileOrBytes(localFile = cacheFile, keyHex = keyHex, ivHex = ivHex)
-                if (cachedSlices.isNotEmpty()) return@withContext cachedSlices
+                if (cachedSlices.isNotEmpty()) {
+                    return@withContext cachedSlices
+                } else {
+                    // Corrupted or invalid cache file (e.g. 403 HTML body saved earlier), purge it
+                    cacheFile.delete()
+                }
             }
 
             // 3. Download via direct OkHttpClient or ApiClient OkHttpClient
@@ -149,6 +154,13 @@ object WebtoonBitmapDecoder {
                 return@withContext emptyList()
             }
 
+            // Verify content type is actually an image, NOT an HTML 403 error page
+            val contentType = resp.header("Content-Type").orEmpty().lowercase()
+            if (contentType.contains("text/html") || contentType.contains("application/json")) {
+                resp.close()
+                return@withContext emptyList()
+            }
+
             val tempFile = File(cacheDir, cacheFile.name + ".tmp")
             resp.use { r ->
                 r.body!!.byteStream().use { input ->
@@ -159,8 +171,14 @@ object WebtoonBitmapDecoder {
             }
 
             if (tempFile.exists() && tempFile.length() > 0) {
+                if (cacheFile.exists()) cacheFile.delete()
                 tempFile.renameTo(cacheFile)
-                return@withContext decodeFileOrBytes(localFile = cacheFile, keyHex = keyHex, ivHex = ivHex)
+                val slices = decodeFileOrBytes(localFile = cacheFile, keyHex = keyHex, ivHex = ivHex)
+                if (slices.isNotEmpty()) {
+                    return@withContext slices
+                } else {
+                    cacheFile.delete()
+                }
             }
 
             emptyList()
